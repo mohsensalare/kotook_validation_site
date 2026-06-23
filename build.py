@@ -126,8 +126,9 @@ for a in area_rows:
                "AND transaction_year BETWEEN 2019 AND 2026 GROUP BY 1 ORDER BY 1",params=[dld]).df()
     masters=con.sql("SELECT master_project_en m, COUNT(*) c FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' "
                     "AND master_project_en IS NOT NULL AND master_project_en<>'' GROUP BY 1 ORDER BY c DESC LIMIT 3",params=[dld]).df()
-    samp=con.sql("SELECT instance_date d, project_name_en p, building_name_en b, master_project_en m, rooms_en r, "
-                 "procedure_area ar, actual_worth w, meter_sale_price ms FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' "
+    samp=con.sql("SELECT instance_date d, project_name_en p, building_name_en b, master_project_en m, "
+                 "nearest_landmark_en lm, nearest_metro_en mt, rooms_en r, procedure_area ar, actual_worth w "
+                 "FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' "
                  "ORDER BY instance_date DESC LIMIT ?",params=[dld,SAMPLE]).df()
     dom = masters.iloc[0]['m'] if len(masters) else None
     if a['missing']: status,stxt=('warn','Community to add')
@@ -150,8 +151,8 @@ for a in area_rows:
     for x in samp.itertuples():
         d=fdate(x.d)
         trs+=f"<tr><td class='mono'>{esc(d)}</td><td class='name'>{esc(x.p)}</td><td>{esc(x.b)}</td>"\
-             f"<td class='muted'>{esc(x.m)}</td><td>{esc(x.r)}</td><td class='num'>{fnum(x.ar)}</td>"\
-             f"<td class='num'>{fnum(x.w)}</td><td class='num'>{fnum(x.ms)}</td></tr>"
+             f"<td class='muted'>{esc(x.m)}</td><td>{esc(x.lm)}</td><td class='muted'>{esc(x.mt)}</td>"\
+             f"<td>{esc(x.r)}</td><td class='num'>{fnum(x.ar)}</td><td class='num'>{fnum(x.w)}</td></tr>"
     kpis=f'<div class="grid k4">{kpi("Sales transactions",fnum(a["tx"]))}{kpi("Since 2023",fnum(s["tx23"]))}'\
          f'{kpi("Value 2023+ (bn AED)",fmoney(a["val23"]))}{kpi("Off-plan 2023+",(fnum(off)+"%") if pd.notna(off) else "—")}</div>'
     body=f"""<div class="crumb"><a href="../areas.html">Areas</a> / {esc(dld)}</div>
@@ -164,7 +165,7 @@ for a in area_rows:
 <h2>Evidence — DLD <span class="mono">master_project_en</span> inside this area</h2>
 <div class="card evid">{ev}<div class="note" style="margin-top:8px">Auto-status compares the Kotook community name to the dominant master_project above. Reviewers should confirm using the sample below.</div></div>
 <h2>{SAMPLE} sample transactions to validate</h2>
-<div class="tablecard"><table><thead><tr><th>Date</th><th>Project</th><th>Building</th><th>Master project</th><th>Rooms</th><th class="num">Size m²</th><th class="num">Price AED</th><th class="num">AED/m²</th></tr></thead><tbody>{trs}</tbody></table></div>
+<div class="tablecard"><table><thead><tr><th>Date</th><th>Project</th><th>Building</th><th>Master project</th><th>Nearest landmark</th><th>Nearest metro</th><th>Rooms</th><th class="num">Size m²</th><th class="num">Price AED</th></tr></thead><tbody>{trs}</tbody></table></div>
 """
     (ROOT/"a"/f"{sl}.html").write_text(page(dld,"areas",body,depth=1),encoding="utf-8")
     area_index.append(dict(dld=dld,kname=a['kname'],kid=a['kid'],tx=a['tx'],val23=a['val23'],
@@ -182,7 +183,8 @@ for x in devs.itertuples():
     titles=sorted(dev_ok[dev_ok['matched_developer_id']==did]['dld_project_or_building_title'].unique())
     yr=con.sql("SELECT transaction_year yr, COUNT(*) tx FROM dev_tx WHERE dev_id=? AND transaction_year BETWEEN 2019 AND 2026 GROUP BY 1 ORDER BY 1",params=[did]).df()
     areas_=con.sql("SELECT area_name_en a, COUNT(*) c FROM dev_tx WHERE dev_id=? GROUP BY 1 ORDER BY c DESC LIMIT 6",params=[did]).df()
-    samp=con.sql("SELECT instance_date d, project_name_en p, building_name_en b, area_name_en a, rooms_en r, procedure_area ar, actual_worth w "
+    samp=con.sql("SELECT instance_date d, project_name_en p, building_name_en b, area_name_en a, "
+                 "nearest_landmark_en lm, nearest_metro_en mt, rooms_en r, procedure_area ar, actual_worth w "
                  "FROM dev_tx WHERE dev_id=? ORDER BY instance_date DESC LIMIT ?",params=[did,SAMPLE]).df()
     yrows=[(str(int(t.yr)),int(t.tx),fnum(t.tx)) for t in yr.itertuples()]
     pills="".join(f'<span class="pill">{esc(t)}</span>' for t in titles)
@@ -191,7 +193,8 @@ for x in devs.itertuples():
     for t in samp.itertuples():
         d=fdate(t.d)
         trs+=f"<tr><td class='mono'>{esc(d)}</td><td class='name'>{esc(t.p)}</td><td>{esc(t.b)}</td>"\
-             f"<td class='muted'>{esc(t.a)}</td><td>{esc(t.r)}</td><td class='num'>{fnum(t.ar)}</td><td class='num'>{fnum(t.w)}</td></tr>"
+             f"<td class='muted'>{esc(t.a)}</td><td>{esc(t.lm)}</td><td class='muted'>{esc(t.mt)}</td>"\
+             f"<td>{esc(t.r)}</td><td class='num'>{fnum(t.ar)}</td><td class='num'>{fnum(t.w)}</td></tr>"
     kpis=f'<div class="grid k4">{kpi("Sales transactions",fnum(x.tx))}{kpi("Since 2023",fnum(x.tx23))}'\
          f'{kpi("Value 2023+ (bn AED)",fmoney(x.val23))}{kpi("Matched projects",fnum(x.nproj))}</div>'
     body=f"""<div class="crumb"><a href="../developers.html">Developers</a> / {esc(name)}</div>
@@ -202,7 +205,7 @@ for x in devs.itertuples():
 <h2>Top communities</h2><div class="card evid">{areapills or "<span class='muted'>—</span>"}</div>
 <h2>Matched DLD project / building names</h2><div class="card">{pills}</div>
 <h2>{SAMPLE} sample transactions to validate</h2>
-<div class="tablecard"><table><thead><tr><th>Date</th><th>Project</th><th>Building</th><th>Community</th><th>Rooms</th><th class="num">Size m²</th><th class="num">Price AED</th></tr></thead><tbody>{trs}</tbody></table></div>
+<div class="tablecard"><table><thead><tr><th>Date</th><th>Project</th><th>Building</th><th>Community</th><th>Nearest landmark</th><th>Nearest metro</th><th>Rooms</th><th class="num">Size m²</th><th class="num">Price AED</th></tr></thead><tbody>{trs}</tbody></table></div>
 """
     sl=str(did)
     (ROOT/"d"/f"{sl}.html").write_text(page(name,"developers",body,depth=1),encoding="utf-8")
