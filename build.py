@@ -48,7 +48,7 @@ def agree(a,b):
 def page(title, active, body, depth=0):
     up = "../"*depth
     nav=[("Overview","index.html","home"),("Areas","areas.html","areas"),
-         ("Developers","developers.html","developers"),("Method","about.html","about")]
+         ("Developers","developers.html","developers"),("Compare","compare.html","compare"),("Method","about.html","about")]
     navhtml="".join(f'<a class="{ "active" if k==active else "" }" href="{up}{href}">{esc(label)}</a>' for label,href,k in nav)
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -100,19 +100,28 @@ for _,r in alld.iterrows():
     kid=None if (kid is None or (isinstance(kid,float) and pd.isna(kid))) else int(kid)
     area_rows.append(dict(dld=dld,kname=str(kname),kid=kid,corrected=corrected,missing=missing))
 
-# developer matches (confirmed OK)
-dev=pd.read_excel(SM,'Developer_Matches')
-dev_ok=dev[dev['matched_developer_id'].notna()].copy()
-dev_ok['key']=dev_ok['dld_project_or_building_title'].str.strip().str.upper()
-dev_ok['matched_developer_id']=dev_ok['matched_developer_id'].astype(int)
-con.register('dev_map', dev_ok[['key','matched_developer_id','matched_developer_name']].rename(
-    columns={'matched_developer_id':'dev_id','matched_developer_name':'dev_name'}))
+# developer attribution via the OFFICIAL DLD chain:
+#   transaction.project_number -> projects(developer_number) -> entity_to_kotook map (-> Kotook developer)
+PULS="/Users/mohsensalare/Desktop/dld_transactions_analysis/puls_data"
+PROJ=f"{PULS}/projects_2026-05-21_02-07-22_1.csv"
+ENT=f"{PULS}/entity_to_kotook.csv"
+con.sql(f"CREATE OR REPLACE TEMP TABLE proj AS SELECT TRIM(CAST(project_number AS VARCHAR)) pn, CAST(developer_number AS BIGINT) devno FROM read_csv_auto('{PROJ}', sample_size=-1) WHERE project_number IS NOT NULL")
+con.sql(f"CREATE OR REPLACE TEMP TABLE entk AS SELECT CAST(devno AS BIGINT) devno, dn, kotook, CAST(kid AS BIGINT) kid FROM read_csv_auto('{ENT}', sample_size=-1)")
 con.sql("""CREATE OR REPLACE TEMP VIEW dev_tx AS
-  SELECT t.*, dm.dev_id, dm.dev_name, dm.key AS match_key,
-    CASE WHEN UPPER(TRIM(t.project_name_en))=dm.key THEN 'project' ELSE 'building' END AS match_field
-  FROM transactions t JOIN dev_map dm
-   ON UPPER(TRIM(t.project_name_en))=dm.key OR UPPER(TRIM(t.building_name_en))=dm.key
-  WHERE t.trans_group_en='Sales'""")
+  SELECT t.*, e.kid, e.kotook AS dev_name, e.dn AS dld_entity
+  FROM transactions t JOIN proj p ON p.pn=TRIM(CAST(t.project_number AS VARCHAR))
+  JOIN entk e ON e.devno=p.devno WHERE t.trans_group_en='Sales'""")
+# Published 2024 external benchmarks (scope/period noted per row) for cross-check links
+BENCH={
+ 'Emaar Properties':{'n':'28,521','note':'2024 off-plan units (Primo Capital); AED 65.4bn dev sales (Emaar)','url':'https://primocapital.ae/blog/10-top-performing-uae-real-estate-developers-of-2024-key-stats-and-success'},
+ 'DAMAC Properties':{'n':'16,463','note':'2024 off-plan units (Primo Capital)','url':'https://primocapital.ae/blog/10-top-performing-uae-real-estate-developers-of-2024-key-stats-and-success'},
+ 'sobha':{'n':'10,384','note':'2024 off-plan units (Primo); AED 23bn sales (Sobha)','url':'https://sobharealty.com/media-center/press-releases/sobha-realty-records-historic-aed-23-billion-in-sales-for-2024/'},
+ 'Binghatti':{'n':'7,259','note':'2024 off-plan units (Primo Capital); AED 10.86bn','url':'https://primocapital.ae/blog/dubai-apartments-hit-6786-billion-in-2024-a-look-at-developers-market-share'},
+ 'Azizi developments':{'n':'10,229','note':'2024 units sold (Azizi official); >AED 10bn','url':'https://www.zawya.com/en/press-release/companies-news/azizi-developments-delivers-19-projects-and-sells-over-10-000-units-in-2024-krao9vmx'},
+ 'Danube Properties':{'n':'6,334','note':'2024 transferred sales; AED 9.42bn (Primo Capital)','url':'https://primocapital.ae/blog/dubai-apartments-hit-6786-billion-in-2024-a-look-at-developers-market-share'},
+ 'Nshama':{'n':'3,024','note':'2024 transactions; AED 4.53bn; 2% share (Primo Capital)','url':'https://primocapital.ae/blog/dubai-apartments-hit-6786-billion-in-2024-a-look-at-developers-market-share'},
+ 'Samana Developers':{'n':'~4.4% off-plan share','note':'2024; AED 7bn revenue (Zawya)','url':'https://www.zawya.com/en/projects/construction/dubais-samana-targets-24bn-sales-in-2024-amid-buoyant-market-conditions-l7qp00it'},
+}
 
 # ---------- per-area pages ----------
 SAMPLE=20
@@ -174,46 +183,55 @@ for a in area_rows:
     area_index.append(dict(dld=dld,kname=a['kname'],kid=a['kid'],tx=a['tx'],val23=a['val23'],
                            status=status,stxt=stxt,corrected=a['corrected'],missing=a['missing'],slug=sl))
 
-# ---------- per-developer pages ----------
-devs=con.sql("SELECT dev_id, MAX(dev_name) dev_name, COUNT(*) tx, "
+# ---------- per-developer pages (official DLD chain) ----------
+devs=con.sql("SELECT kid, MAX(dev_name) dev_name, COUNT(*) tx, "
              "SUM(CASE WHEN transaction_year>=2023 THEN 1 ELSE 0 END) tx23, "
              "ROUND(SUM(CASE WHEN transaction_year>=2023 THEN actual_worth ELSE 0 END)/1e9,2) val23, "
-             "COUNT(DISTINCT COALESCE(project_name_en,building_name_en)) nproj "
-             "FROM dev_tx GROUP BY dev_id HAVING COUNT(*)>0 ORDER BY tx DESC").df()
-dev_index=[]
+             "COUNT(DISTINCT dld_entity) nent "
+             "FROM dev_tx GROUP BY kid HAVING COUNT(*)>0 ORDER BY tx DESC").df()
+dev_index=[]; our24={}
 for x in devs.itertuples():
-    did=int(x.dev_id); name=x.dev_name
-    titles=sorted(dev_ok[dev_ok['matched_developer_id']==did]['dld_project_or_building_title'].unique())
-    yr=con.sql("SELECT transaction_year yr, COUNT(*) tx FROM dev_tx WHERE dev_id=? AND transaction_year BETWEEN 2019 AND 2026 GROUP BY 1 ORDER BY 1",params=[did]).df()
-    areas_=con.sql("SELECT area_name_en a, COUNT(*) c FROM dev_tx WHERE dev_id=? GROUP BY 1 ORDER BY c DESC LIMIT 6",params=[did]).df()
-    samp=con.sql("SELECT match_field mf, match_key mk, instance_date d, project_name_en p, building_name_en b, area_name_en a, "
+    did=int(x.kid); name=str(x.dev_name)
+    ents=con.sql("SELECT DISTINCT dld_entity e FROM dev_tx WHERE kid=? ORDER BY 1",params=[did]).df()['e'].tolist()
+    yr=con.sql("SELECT transaction_year yr, COUNT(*) tx FROM dev_tx WHERE kid=? AND transaction_year BETWEEN 2019 AND 2026 GROUP BY 1 ORDER BY 1",params=[did]).df()
+    o=con.sql("SELECT SUM(CASE WHEN transaction_year=2024 THEN 1 ELSE 0 END) c24, ROUND(SUM(CASE WHEN transaction_year=2024 THEN actual_worth ELSE 0 END)/1e9,1) v24 FROM dev_tx WHERE kid=?",params=[did]).df().iloc[0]
+    our_c=int(o['c24'] or 0); our_v=0.0 if pd.isna(o['v24']) else float(o['v24']); our24[did]=(our_c,our_v)
+    areas_=con.sql("SELECT area_name_en a, COUNT(*) c FROM dev_tx WHERE kid=? GROUP BY 1 ORDER BY c DESC LIMIT 6",params=[did]).df()
+    samp=con.sql("SELECT dld_entity de, instance_date d, project_name_en p, building_name_en b, area_name_en a, "
                  "nearest_landmark_en lm, nearest_metro_en mt, rooms_en r, procedure_area ar, actual_worth w "
-                 "FROM dev_tx WHERE dev_id=? ORDER BY instance_date DESC LIMIT ?",params=[did,SAMPLE]).df()
+                 "FROM dev_tx WHERE kid=? ORDER BY instance_date DESC LIMIT ?",params=[did,SAMPLE]).df()
     yrows=[(str(int(t.yr)),int(t.tx),fnum(t.tx)) for t in yr.itertuples()]
-    pills="".join(f'<span class="pill">{esc(t)}</span>' for t in titles)
+    entpills="".join(f'<span class="pill">{esc(e)}</span>' for e in ents) or "<span class='muted'>—</span>"
     areapills=" · ".join(f"<b>{esc(t.a)}</b> ({fnum(t.c)})" for t in areas_.itertuples())
     trs=""
     for t in samp.itertuples():
         d=fdate(t.d)
-        trs+=f"<tr><td class='match'>{esc(t.mf)}: {esc(t.mk)}</td><td class='mono'>{esc(d)}</td><td class='name'>{esc(t.p)}</td><td>{esc(t.b)}</td>"\
+        trs+=f"<tr><td class='match'>{esc(t.de)}</td><td class='mono'>{esc(d)}</td><td class='name'>{esc(t.p)}</td><td>{esc(t.b)}</td>"\
              f"<td class='muted'>{esc(t.a)}</td><td>{esc(t.lm)}</td><td class='muted'>{esc(t.mt)}</td>"\
              f"<td>{esc(t.r)}</td><td class='num'>{fnum(t.ar)}</td><td class='num'>{fnum(t.w)}</td></tr>"
-    kpis=f'<div class="grid k4">{kpi("Sales transactions",fnum(x.tx))}{kpi("Since 2023",fnum(x.tx23))}'\
-         f'{kpi("Value 2023+ (bn AED)",fmoney(x.val23))}{kpi("Matched projects",fnum(x.nproj))}</div>'
+    b=BENCH.get(name); xcheck=""
+    if b:
+        xcheck=(f'<div class="callout"><h3>External cross-check (2024)</h3>'
+                f'<div class="note">Our 2024 sales (official DLD chain): <b>{fnum(our_c)}</b> · ~AED {fmoney(our_v)}bn &nbsp;·&nbsp; '
+                f'Independent benchmark: <b>{esc(b["n"])}</b> — {esc(b["note"])} '
+                f'<a href="{esc(b["url"])}" target="_blank" rel="noopener">source ↗</a></div></div>')
+    kpis=(f'<div class="grid k4">{kpi("Sales transactions",fnum(x.tx))}{kpi("Since 2023",fnum(x.tx23))}'
+          f'{kpi("Value 2023+ (bn AED)",fmoney(x.val23))}{kpi("DLD developer entities",fnum(x.nent))}</div>')
     body=f"""<div class="crumb"><a href="../developers.html">Developers</a> / {esc(name)}</div>
-<h1>{esc(name)} <span class="chip ok">Confirmed matches</span></h1>
-<p class="sub">Kotook developer id {did} · attribution via confirmed DLD project/building names.</p>
+<h1>{esc(name)} <span class="chip ok">Official DLD attribution</span></h1>
+<p class="sub">Kotook developer id {did} · attribution via DLD <span class="mono">project_number → developer</span> (official projects registry).</p>
 {kpis}
+{xcheck}
 <h2>Sales transactions per year</h2><div class="chartcard">{bars(yrows)}</div>
 <h2>Top communities</h2><div class="card evid">{areapills or "<span class='muted'>—</span>"}</div>
-<h2>Matched DLD project / building names</h2><div class="card">{pills}</div>
+<h2>DLD developer entities mapped to this brand</h2><div class="card">{entpills}</div>
 <h2>{SAMPLE} sample transactions to validate</h2>
-<p class="note">Why these rows: each one matched one of this developer's confirmed DLD project/building names — the matched name is shown in the highlighted column.</p>
-<div class="tablecard"><table><thead><tr><th class="match">Matched on (DLD)</th><th>Date</th><th>Project</th><th>Building</th><th>Community</th><th>Nearest landmark</th><th>Nearest metro</th><th>Rooms</th><th class="num">Size m²</th><th class="num">Price AED</th></tr></thead><tbody>{trs}</tbody></table></div>
+<p class="note">Why these rows: each transaction's project is officially registered in DLD to the developer entity in the highlighted column, which rolls up to <b>{esc(name)}</b>.</p>
+<div class="tablecard"><table><thead><tr><th class="match">DLD developer (official)</th><th>Date</th><th>Project</th><th>Building</th><th>Community</th><th>Nearest landmark</th><th>Nearest metro</th><th>Rooms</th><th class="num">Size m²</th><th class="num">Price AED</th></tr></thead><tbody>{trs}</tbody></table></div>
 """
     sl=str(did)
     (ROOT/"d"/f"{sl}.html").write_text(page(name,"developers",body,depth=1),encoding="utf-8")
-    dev_index.append(dict(id=did,name=name,tx=int(x.tx),val23=float(x.val23),nproj=int(x.nproj),slug=sl))
+    dev_index.append(dict(id=did,name=name,tx=int(x.tx),val23=float(x.val23 or 0),nproj=int(x.nent),slug=sl,our2024=our_c,bench=bool(b)))
 
 # ---------- list data (JS) ----------
 (ROOT/"data"/"areas.js").write_text("window.AREAS="+json.dumps(area_index,ensure_ascii=False)+";",encoding="utf-8")
@@ -244,7 +262,7 @@ body=f"""<h1>DLD ↔ Kotook data validation</h1>
 <div class="note" style="margin-top:6px">Validation: dominant <span class="mono">master_project_en</span> reproduced 21/21 uncontested mappings; each corrected master sits 100% inside one DLD area.</div></div>
 <h2>Browse</h2>
 <div class="grid k2"><a class="card" href="areas.html"><div class="kpi"><div class="label">Areas</div><div class="val green">{len(area_index)}</div><div class="hint">DLD areas mapped to Kotook communities →</div></div></a>
-<a class="card" href="developers.html"><div class="kpi"><div class="label">Developers</div><div class="val green">{len(dev_index)}</div><div class="hint">Kotook developers with confirmed DLD matches →</div></div></a></div>
+<a class="card" href="developers.html"><div class="kpi"><div class="label">Developers</div><div class="val green">{len(dev_index)}</div><div class="hint">official DLD project→developer attribution →</div></div></a></div>
 """
 (ROOT/"index.html").write_text(page("Overview","home",body,depth=0),encoding="utf-8")
 
@@ -263,11 +281,31 @@ body=f"""<h1>Areas <span class="muted" style="font-size:16px">({len(area_index)}
 
 # ---------- developers list ----------
 body=f"""<h1>Developers <span class="muted" style="font-size:16px">({len(dev_index)})</span></h1>
-<p class="sub">Kotook developers with confirmed DLD project/building matches. Open one to validate its {SAMPLE} sample transactions.</p>
+<p class="sub">Kotook developers, attributed via the official DLD <span class="mono">project_number → developer</span> chain. See <a href="compare.html">Compare</a> for top-10 numbers vs market sources. Open one to validate its {SAMPLE} sample transactions.</p>
 <div class="toolbar"><input id="q" class="search" placeholder="Search developer…"><span class="count" id="count"></span></div>
-<div class="tablecard"><table><thead><tr><th>Developer</th><th class="num">Sales tx</th><th class="num">Value 2023+ (bn)</th><th class="num">Matched projects</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="tablecard"><table><thead><tr><th>Developer</th><th class="num">Sales tx</th><th class="num">Value 2023+ (bn)</th><th class="num">DLD entities</th></tr></thead><tbody id="rows"></tbody></table></div>
 <script src="data/developers.js"></script><script src="assets/app_devs.js"></script>"""
 (ROOT/"developers.html").write_text(page("Developers","developers",body,depth=0),encoding="utf-8")
+
+# ---------- compare page (top developers vs published market benchmarks) ----------
+crows=""
+for x in devs.head(12).itertuples():
+    name=str(x.dev_name); did=int(x.kid); c24,v24=our24.get(did,(0,0.0)); b=BENCH.get(name)
+    if b:
+        extcell=f'{esc(b["n"])}<div class="note">{esc(b["note"])}</div>'
+        srccell=f'<a href="{esc(b["url"])}" target="_blank" rel="noopener">source ↗</a>'
+    else:
+        extcell='<span class="muted">— (verify via source)</span>'
+        srccell='<a href="https://dxbinteract.com/" target="_blank" rel="noopener">dxbinteract ↗</a>'
+    crows+=(f"<tr><td class='name'><a href='d/{did}.html'>{esc(name)}</a></td>"
+            f"<td class='num'>{fnum(c24)}</td><td class='num'>{fmoney(v24)}</td>"
+            f"<td>{extcell}</td><td>{srccell}</td></tr>")
+body=f"""<h1>Cross-check vs market sources</h1>
+<p class="sub">Our DLD figures (official <span class="mono">project_number → developer</span> chain) next to published 2024 benchmarks, so the team can verify each number against an external source.</p>
+<div class="callout"><h3>Read the numbers carefully</h3><div class="note">Figures differ by <b>scope</b>: we count <b>all registered sales</b> (off-plan + ready/resale) for the full calendar year; several sources count <b>off-plan only</b>, or developer <b>bookings</b>, or a different window. Closeness (not exact equality) is the signal. Our developer attribution covers ~77% of sales (projects registered in the May-2026 projects snapshot); brand-new launches may be slightly under-counted.</div></div>
+<div class="tablecard"><table><thead><tr><th>Developer</th><th class="num">Our 2024 sales</th><th class="num">Our 2024 value (bn)</th><th>External 2024 benchmark</th><th>Source</th></tr></thead><tbody>{crows}</tbody></table></div>
+"""
+(ROOT/"compare.html").write_text(page("Compare","compare",body,depth=0),encoding="utf-8")
 
 # ---------- about ----------
 body=f"""<h1>Method &amp; data sources</h1>
