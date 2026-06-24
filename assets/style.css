@@ -99,6 +99,10 @@ td.name{font-weight:600}
 .note{font-size:12.5px;color:var(--muted)}
 .evid{font-size:13px;color:var(--muted)}
 .evid b{color:var(--ink)}
+.statrow{display:flex;flex-wrap:wrap;gap:14px 32px;align-items:flex-end}
+.statrow > div{display:flex;flex-direction:column;gap:3px}
+.statrow .lbl{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.statrow .v{font-size:19px;font-weight:800;letter-spacing:-.4px;color:var(--ink)}
 .pill{display:inline-block;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-size:12px;margin:2px 3px 2px 0}
 footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:12.5px;background:#fff}
 .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:2px 0 0}
