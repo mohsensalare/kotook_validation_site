@@ -8,6 +8,7 @@ REP  = "/Users/mohsensalare/Desktop/Kotook_Data_Report_EN.xlsx"
 SM   = "/Users/mohsensalare/Desktop/dld_transactions_analysis/DLD_Kotook_Simple_Matches.xlsx"
 con  = duckdb.connect(DLD, read_only=True)
 TODAY= datetime.date.today().isoformat()
+BUILD= datetime.datetime.now().strftime("%Y%m%d%H%M%S")  # cache-buster: changes every build
 
 # ---------- helpers ----------
 def esc(x):
@@ -53,8 +54,10 @@ def page(title, active, body, depth=0):
     navhtml="".join(f'<a class="{ "active" if k==active else "" }" href="{up}{href}">{esc(label)}</a>' for label,href,k in nav)
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <title>{esc(title)} · Kotook DLD Validation</title>
-<link rel="stylesheet" href="{up}assets/style.css"></head><body>
+<link rel="stylesheet" href="{up}assets/style.css?v={BUILD}"></head><body>
 <header class="top"><div class="wrap">
 <div class="brand"><span class="dot"></span>Kotook&nbsp;<small>DLD Data Validation</small></div>
 <nav class="main">{navhtml}</nav></div></header>
@@ -370,7 +373,7 @@ body=f"""<h1>Areas <span class="muted" style="font-size:16px">({len(area_index)}
 <button class="filterbtn" data-f="corrected">Corrected</button>
 <span class="count" id="count"></span></div>
 <div class="tablecard"><table><thead><tr><th>DLD area</th><th>Kotook community</th><th>Status</th><th class="num">Sales tx</th><th class="num">Value 2023+ (bn)</th></tr></thead><tbody id="rows"></tbody></table></div>
-<script src="data/areas.js"></script><script src="assets/app_areas.js"></script>"""
+<script src="data/areas.js?v={BUILD}"></script><script src="assets/app_areas.js?v={BUILD}"></script>"""
 (ROOT/"areas.html").write_text(page("Areas","areas",body,depth=0),encoding="utf-8")
 
 # ---------- developers list ----------
@@ -378,7 +381,7 @@ body=f"""<h1>Developers <span class="muted" style="font-size:16px">({len(dev_ind
 <p class="sub">Kotook developers, attributed via the official DLD <span class="mono">project_number → developer</span> chain. See <a href="compare.html">Compare</a> for top-10 numbers vs market sources. Open one to validate its {SAMPLE} sample transactions.</p>
 <div class="toolbar"><input id="q" class="search" placeholder="Search developer…"><span class="count" id="count"></span></div>
 <div class="tablecard"><table><thead><tr><th>Developer</th><th class="num">Sales tx</th><th class="num">Value 2023+ (bn)</th><th class="num">DLD entities</th></tr></thead><tbody id="rows"></tbody></table></div>
-<script src="data/developers.js"></script><script src="assets/app_devs.js"></script>"""
+<script src="data/developers.js?v={BUILD}"></script><script src="assets/app_devs.js?v={BUILD}"></script>"""
 (ROOT/"developers.html").write_text(page("Developers","developers",body,depth=0),encoding="utf-8")
 
 # ---------- compare page (top developers vs published market benchmarks) ----------
