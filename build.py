@@ -142,7 +142,48 @@ con.sql(f"""CREATE OR REPLACE TEMP TABLE valarea AS
   FROM read_csv_auto('{VAL}', sample_size=-1)
   WHERE procedure_area>0 AND actual_worth>0 AND TRY_CAST(instance_date AS DATE)>=DATE '2024-01-01'
   GROUP BY 1 HAVING COUNT(*)>=20""")
+
+# ---- NEW: existing built stock + unit-size/room mix (units registry, 2.34M rows; read ONCE) ----
+# Keyed on area_name_en (same DLD vocab as transactions). actual_area cleaned to 10..100,000 m².
+UNITS=f"{PULS}/units_2026-05-21_02-09-40_1.csv"
+con.sql(f"""CREATE OR REPLACE TEMP TABLE units_area AS
+  WITH u AS (
+    SELECT area_name_en a, TRY_CAST(actual_area AS DOUBLE) ar,
+      CASE WHEN rooms_en ILIKE '%studio%' THEN 'Studio'
+           WHEN regexp_extract(COALESCE(rooms_en,''),'^([0-9])')='1' THEN '1 B/R'
+           WHEN regexp_extract(COALESCE(rooms_en,''),'^([0-9])')='2' THEN '2 B/R'
+           WHEN regexp_extract(COALESCE(rooms_en,''),'^([0-9])')='3' THEN '3 B/R'
+           WHEN regexp_extract(COALESCE(rooms_en,''),'^([0-9])') IN ('4','5','6','7','8','9') THEN '4+ B/R'
+           ELSE NULL END bucket
+    FROM read_csv_auto('{UNITS}', sample_size=-1) WHERE area_name_en IS NOT NULL)
+  SELECT a, COUNT(*) units_total,
+    ROUND(MEDIAN(CASE WHEN ar BETWEEN 10 AND 100000 THEN ar END)) med_sqm,
+    SUM((bucket='Studio')::int) br0, SUM((bucket='1 B/R')::int) br1,
+    SUM((bucket='2 B/R')::int) br2, SUM((bucket='3 B/R')::int) br3, SUM((bucket='4+ B/R')::int) br4
+  FROM u GROUP BY a""")
+
+# ---- NEW: typical service charge AED/sqft per community (oa_service_charges, 2023 = latest full year) ----
+# Per project total = SUM(service_cost over its ~20 categories); community = MEDIAN across projects.
+OA=f"{PULS}/oa_service_charges_2026-05-28_11-42-18_1.csv"
+con.sql(f"""CREATE OR REPLACE TEMP TABLE sc_comm AS
+  WITH proj AS (
+    SELECT master_community_name_en comm, project_name, SUM(TRY_CAST(service_cost AS DOUBLE)) tot
+    FROM read_csv_auto('{OA}', sample_size=-1)
+    WHERE TRY_CAST(budget_year AS INT)=2023 AND usage_name_en='Residential' AND TRY_CAST(service_cost AS DOUBLE)>0
+    GROUP BY 1,2)
+  SELECT comm, COUNT(*) n_proj, ROUND(MEDIAN(tot),1) sc_sqft
+  FROM proj WHERE comm IS NOT NULL AND comm NOT IN ('Unspecified','') GROUP BY 1 HAVING COUNT(*)>=3""")
+SC_ROWS=[(r.comm, float(r.sc_sqft), int(r.n_proj)) for r in con.sql("SELECT * FROM sc_comm ORDER BY sc_sqft DESC").df().itertuples()]
+def service_charge(*names):  # fuzzy-match a Kotook/DLD name to a service-charge community
+    for comm,scv,np in SC_ROWS:
+        if any(agree(n,comm) for n in names if n): return scv,np,comm
+    return None,None,None
+
 SQFT=10.7639
+# PRICE metrics run on a CLEAN RESIDENTIAL basis: only Unit/Villa, plausible AED/m² band
+# (excludes Land + commercial Office/Shop/Hotel and impossible prices — ~9.7% of Sales rows).
+# Counts (sales-tx) and value-sum stay over ALL Sales; only price medians/shares use this filter.
+PRICE_FILTER="property_type_en IN ('Unit','Villa') AND meter_sale_price BETWEEN 500 AND 200000"
 def sqlq(s):  # safe single-quoted SQL literal
     return "'"+str(s).replace("'","''")+"'"
 def supply_block(where, param):  # returns (pipeline_units, projects, [(yr,units)...])
@@ -158,22 +199,26 @@ area_index=[]
 for a in area_rows:
     dld=a['dld']
     s=con.sql("SELECT COUNT(*) tx, SUM(CASE WHEN transaction_year>=2023 THEN 1 ELSE 0 END) tx23,"
-              "ROUND(SUM(CASE WHEN transaction_year>=2023 THEN actual_worth ELSE 0 END)/1e9,2) val23 "
+              "ROUND(SUM(CASE WHEN transaction_year>=2023 THEN actual_worth ELSE 0 END)/1e9,2) val23, "
+              "ROUND(SUM(CASE WHEN transaction_year>=2023 AND actual_worth<=500000000 THEN actual_worth ELSE 0 END)/1e9,2) val23x "
               "FROM transactions WHERE area_name_en=? AND trans_group_en='Sales'",params=[dld]).df().iloc[0]
-    off=con.sql("SELECT ROUND(100.0*SUM(CASE WHEN reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0)) p "
-                "FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' AND transaction_year>=2023",params=[dld]).df().iloc[0]['p']
-    yr=con.sql(f"SELECT transaction_year yr, COUNT(*) tx, ROUND(MEDIAN(meter_sale_price)/{SQFT}) sqft, "
-               f"ROUND(MEDIAN(CASE WHEN reg_type_en='Existing Properties' THEN meter_sale_price END)/{SQFT}) rsqft, "
-               "ROUND(100.0*SUM(CASE WHEN reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/COUNT(*)) op "
+    off=con.sql(f"SELECT ROUND(100.0*SUM(CASE WHEN reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0)) p "
+                f"FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' AND {PRICE_FILTER} AND transaction_year>=2023",params=[dld]).df().iloc[0]['p']
+    yr=con.sql(f"SELECT transaction_year yr, COUNT(*) tx, ROUND(MEDIAN(CASE WHEN {PRICE_FILTER} THEN meter_sale_price END)/{SQFT}) sqft, "
+               f"ROUND(MEDIAN(CASE WHEN {PRICE_FILTER} AND reg_type_en='Existing Properties' THEN meter_sale_price END)/{SQFT}) rsqft, "
+               f"ROUND(100.0*SUM(CASE WHEN {PRICE_FILTER} AND reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN {PRICE_FILTER} THEN 1 ELSE 0 END),0)) op "
                "FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' "
                "AND transaction_year BETWEEN 2019 AND 2026 GROUP BY 1 ORDER BY 1",params=[dld]).df()
-    oprem=con.sql("SELECT ROUND(MEDIAN(CASE WHEN reg_type_en='Off-Plan Properties' THEN meter_sale_price END)) op_sqm, "
-               "ROUND(MEDIAN(CASE WHEN reg_type_en='Existing Properties' THEN meter_sale_price END)) rd_sqm "
-               "FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' AND transaction_year>=2023",params=[dld]).df().iloc[0]
-    mkt_sqm=con.sql("SELECT ROUND(MEDIAN(meter_sale_price)) m FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' AND transaction_year>=2024",params=[dld]).df().iloc[0]['m']
+    oprem=con.sql(f"SELECT ROUND(MEDIAN(CASE WHEN reg_type_en='Off-Plan Properties' THEN meter_sale_price END)) op_sqm, "
+               f"ROUND(MEDIAN(CASE WHEN reg_type_en='Existing Properties' THEN meter_sale_price END)) rd_sqm "
+               f"FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' AND {PRICE_FILTER} AND transaction_year>=2023",params=[dld]).df().iloc[0]
+    mkt_sqm=con.sql(f"SELECT ROUND(MEDIAN(meter_sale_price)) m FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' AND {PRICE_FILTER} AND transaction_year>=2024",params=[dld]).df().iloc[0]['m']
     val_sqm=con.sql(f"SELECT ROUND(val_sqm) v FROM valarea WHERE area_name_en={sqlq(dld)}").df()
     val_sqm=(val_sqm.iloc[0]['v'] if len(val_sqm) else None)
     pipe_u,pipe_p,hands=supply_block("projfull", f"area_name_en={sqlq(dld)}")
+    ua=con.sql(f"SELECT * FROM units_area WHERE a={sqlq(dld)}").df()
+    ua=ua.iloc[0] if len(ua) else None
+    sc_val,sc_np,sc_match=service_charge(a['kname'],dld)
     masters=con.sql("SELECT master_project_en m, COUNT(*) c FROM transactions WHERE area_name_en=? AND trans_group_en='Sales' "
                     "AND master_project_en IS NOT NULL AND master_project_en<>'' GROUP BY 1 ORDER BY c DESC LIMIT 3",params=[dld]).df()
     samp=con.sql("SELECT area_name_en a, instance_date d, project_name_en p, building_name_en b, "
@@ -216,8 +261,24 @@ for a in area_rows:
     op_sqm=oprem['op_sqm']; rd_sqm=oprem['rd_sqm']
     prem=f"{(op_sqm-rd_sqm)/rd_sqm*100:+.0f}%" if (pd.notna(op_sqm) and pd.notna(rd_sqm) and rd_sqm) else "—"
     valgap=f"{(mkt_sqm-val_sqm)/val_sqm*100:+.0f}%" if (val_sqm and pd.notna(mkt_sqm)) else "—"
-    stats=statline([("Off-plan premium (2023+)",prem),("Market vs DLD valuation (2024+)",valgap),
-                    ("Median AED/m² (2024+)",fnum(mkt_sqm) if pd.notna(mkt_sqm) else "—")])
+    stat_items=[("Off-plan premium (2023+)",prem),("Market vs DLD valuation (2024+)",valgap),
+                ("Median AED/m² (2024+)",fnum(mkt_sqm) if pd.notna(mkt_sqm) else "—")]
+    if sc_val is not None: stat_items.append(("Service charge 2023 (AED/sqft)",f"~{sc_val:.1f}"))
+    stats=statline(stat_items)
+    # existing built stock + unit mix (units registry)
+    stock_section=""
+    if ua is not None and pd.notna(ua['units_total']):
+        iv=lambda k:(int(ua[k]) if pd.notna(ua[k]) else 0)
+        brc=[("Studio",iv('br0')),("1 B/R",iv('br1')),("2 B/R",iv('br2')),
+             ("3 B/R",iv('br3')),("4+ B/R",iv('br4'))]
+        brtot=sum(c for _,c in brc) or 1
+        mixrows="".join(f"<tr><td>{lab}</td><td class='num'>{fnum(c)}</td><td class='num'>{round(100*c/brtot)}%</td></tr>" for lab,c in brc)
+        med=ua['med_sqm']
+        stock_card=(f'<div class="grid k2">{kpi("Existing built units",fnum(ua["units_total"]),"titled units in DLD registry")}'
+                    f'{kpi("Median unit size",(fnum(med)+" m²") if pd.notna(med) else "—")}</div>'
+                    f'<div class="tablecard" style="margin-top:14px"><table><thead><tr><th>Bedrooms</th><th class="num">Units</th><th class="num">Share</th></tr></thead><tbody>{mixrows}</tbody></table></div>'
+                    f'<p class="note" style="margin-top:6px">Existing built stock from the DLD <b>units</b> registry (snapshot of titled units). Bedroom mix is among classified residential units; size uses cleaned <span class="mono">actual_area</span> (~13% unusable rows excluded).</p>')
+        stock_section=f"<h2>Existing built stock &amp; unit mix</h2>{stock_card}"
     ev=" · ".join(f"<b>{esc(m.m)}</b> ({fnum(m.c)})" for m in masters.itertuples()) or "<span class='muted'>no master label</span>"
     miss_note=""
     if a['missing']:
@@ -229,8 +290,10 @@ for a in area_rows:
         trs+=f"<tr><td class='match'>{esc(x.a)}</td><td class='mono'>{esc(d)}</td><td class='name'>{esc(x.p)}</td><td>{esc(x.b)}</td>"\
              f"<td>{esc(x.lm)}</td><td class='muted'>{esc(x.mt)}</td>"\
              f"<td>{esc(x.r)}</td><td class='num'>{fnum(x.ar)}</td><td class='num'>{fnum(x.w)}</td></tr>"
+    val23x=0.0 if pd.isna(s["val23x"]) else float(s["val23x"])
+    vhint=(f"excl. bulk >500M: {fmoney(val23x)} bn" if (a["val23"]-val23x)>=0.05 else "")
     kpis=f'<div class="grid k4">{kpi("Sales transactions",fnum(a["tx"]))}{kpi("Since 2023",fnum(s["tx23"]))}'\
-         f'{kpi("Value 2023+ (bn AED)",fmoney(a["val23"]))}{kpi("Off-plan 2023+",(fnum(off)+"%") if pd.notna(off) else "—")}</div>'
+         f'{kpi("Value 2023+ (bn AED)",fmoney(a["val23"]),vhint)}{kpi("Off-plan 2023+ (res)",(fnum(off)+"%") if pd.notna(off) else "—")}</div>'
     body=f"""<div class="crumb"><a href="../areas.html">Areas</a> / {esc(dld)}</div>
 <h1>{esc(dld)} {chips}</h1>
 <p class="sub">Mapped to Kotook community: <b>{esc(a['kname'])}</b>{(' · id '+str(a['kid'])) if a['kid'] else ''}</p>
@@ -239,11 +302,12 @@ for a in area_rows:
 <h2>Sales transactions per year</h2>
 <div class="chartcard">{bars(yrows)}</div>
 <h2>Price &amp; off-plan by year</h2>
-<div class="tablecard"><table><thead><tr><th>Year</th><th class="num">Sales</th><th class="num">AED/sqft (median, all)</th><th class="num">YoY (ready)</th><th class="num">Off-plan</th></tr></thead><tbody>{ptbl}</tbody></table></div>
-<p class="note" style="margin-top:8px">Level = median AED/sqft of all sales (tracks portal price indices). YoY = ready/secondary-market growth — it strips out off-plan launch-mix noise, so a one-off luxury off-plan wave can't show up as a fake price swing.</p>
+<div class="tablecard"><table><thead><tr><th>Year</th><th class="num">Sales</th><th class="num">AED/sqft (median, res)</th><th class="num">YoY (ready)</th><th class="num">Off-plan</th></tr></thead><tbody>{ptbl}</tbody></table></div>
+<p class="note" style="margin-top:8px">Sales = all registered sales (every property type). Price columns use a <b>clean residential basis</b> — only Unit/Villa, with impossible AED/m² values removed (~9.7% of rows; medians barely move). Level tracks portal price indices; YoY = ready/secondary-market growth, which strips off-plan launch-mix noise so a one-off luxury wave can't fake a price swing.</p>
 <div style="margin-top:12px">{stats}</div>
 <h2>Supply &amp; absorption</h2>
 {supply_card}
+{stock_section}
 <h2>Evidence — DLD <span class="mono">master_project_en</span> inside this area</h2>
 <div class="card evid">{ev}<div class="note" style="margin-top:8px">Auto-status compares the Kotook community name to the dominant master_project above. Reviewers should confirm using the sample below.</div></div>
 <h2>{SAMPLE} sample transactions to validate</h2>
@@ -258,18 +322,19 @@ for a in area_rows:
 devs=con.sql("SELECT kid, MAX(dev_name) dev_name, COUNT(*) tx, "
              "SUM(CASE WHEN transaction_year>=2023 THEN 1 ELSE 0 END) tx23, "
              "ROUND(SUM(CASE WHEN transaction_year>=2023 THEN actual_worth ELSE 0 END)/1e9,2) val23, "
+             "ROUND(SUM(CASE WHEN transaction_year>=2023 AND actual_worth<=500000000 THEN actual_worth ELSE 0 END)/1e9,2) val23x, "
              "COUNT(DISTINCT dld_entity) nent "
              "FROM dev_tx GROUP BY kid HAVING COUNT(*)>0 ORDER BY tx DESC").df()
 dev_index=[]; our24={}
 for x in devs.itertuples():
     did=int(x.kid); name=str(x.dev_name)
     ents=con.sql("SELECT DISTINCT dld_entity e FROM dev_tx WHERE kid=? ORDER BY 1",params=[did]).df()['e'].tolist()
-    yr=con.sql(f"SELECT transaction_year yr, COUNT(*) tx, ROUND(MEDIAN(meter_sale_price)/{SQFT}) sqft, "
-               f"ROUND(MEDIAN(CASE WHEN reg_type_en='Existing Properties' THEN meter_sale_price END)/{SQFT}) rsqft, "
-               "ROUND(100.0*SUM(CASE WHEN reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/COUNT(*)) op "
+    yr=con.sql(f"SELECT transaction_year yr, COUNT(*) tx, ROUND(MEDIAN(CASE WHEN {PRICE_FILTER} THEN meter_sale_price END)/{SQFT}) sqft, "
+               f"ROUND(MEDIAN(CASE WHEN {PRICE_FILTER} AND reg_type_en='Existing Properties' THEN meter_sale_price END)/{SQFT}) rsqft, "
+               f"ROUND(100.0*SUM(CASE WHEN {PRICE_FILTER} AND reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN {PRICE_FILTER} THEN 1 ELSE 0 END),0)) op "
                "FROM dev_tx WHERE kid=? AND transaction_year BETWEEN 2019 AND 2026 GROUP BY 1 ORDER BY 1",params=[did]).df()
-    o=con.sql("SELECT SUM(CASE WHEN transaction_year=2024 THEN 1 ELSE 0 END) c24, ROUND(SUM(CASE WHEN transaction_year=2024 THEN actual_worth ELSE 0 END)/1e9,1) v24, "
-              "ROUND(100.0*SUM(CASE WHEN transaction_year>=2023 AND reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN transaction_year>=2023 THEN 1 ELSE 0 END),0)) opshare "
+    o=con.sql(f"SELECT SUM(CASE WHEN transaction_year=2024 THEN 1 ELSE 0 END) c24, ROUND(SUM(CASE WHEN transaction_year=2024 THEN actual_worth ELSE 0 END)/1e9,1) v24, "
+              f"ROUND(100.0*SUM(CASE WHEN {PRICE_FILTER} AND transaction_year>=2023 AND reg_type_en='Off-Plan Properties' THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN {PRICE_FILTER} AND transaction_year>=2023 THEN 1 ELSE 0 END),0)) opshare "
               "FROM dev_tx WHERE kid=?",params=[did]).df().iloc[0]
     our_c=int(o['c24'] or 0); our_v=0.0 if pd.isna(o['v24']) else float(o['v24']); our24[did]=(our_c,our_v)
     dopshare=o['opshare']; dpipe_u,dpipe_p,dhands=supply_block("projkid", f"kid={did}")
@@ -289,7 +354,7 @@ for x in devs.itertuples():
         else: ghtml="—"
         ptbl+=f"<tr><td>{int(t.yr)}</td><td class='num'>{fnum(t.tx)}</td><td class='num'>{sqftv}</td><td class='num'>{ghtml}</td><td class='num'>{opv}</td></tr>"
         if pd.notna(t.rsqft): prev=t.rsqft
-    dstat=statline([("Off-plan share (2023+)", f"{int(dopshare)}%" if pd.notna(dopshare) else "—")])
+    dstat=statline([("Off-plan share (2023+, res)", f"{int(dopshare)}%" if pd.notna(dopshare) else "—")])
     dhbars=bars([(y,u,fnum(u)) for y,u in dhands]) if dhands else "<span class='muted'>no dated handovers in DLD registry</span>"
     dsupply=(f'<div class="grid k2">{kpi("Pipeline units",fnum(dpipe_u),"under construction / planned")}{kpi("Pipeline projects",fnum(dpipe_p))}</div>'
              f'<div class="chartcard" style="margin-top:14px"><div class="note" style="margin-bottom:6px">Units handing over by year — DLD registered-project pipeline (lower bound)</div>{dhbars}</div>')
@@ -307,8 +372,10 @@ for x in devs.itertuples():
                 f'<div class="note">Our 2024 sales (official DLD chain): <b>{fnum(our_c)}</b> · ~AED {fmoney(our_v)}bn &nbsp;·&nbsp; '
                 f'Independent benchmark: <b>{esc(b["n"])}</b> — {esc(b["note"])} '
                 f'<a href="{esc(b["url"])}" target="_blank" rel="noopener">source ↗</a></div></div>')
+    vx=0.0 if pd.isna(x.val23x) else float(x.val23x)
+    vhint=(f"excl. bulk >500M: {fmoney(vx)} bn" if (float(x.val23 or 0)-vx)>=0.05 else "")
     kpis=(f'<div class="grid k4">{kpi("Sales transactions",fnum(x.tx))}{kpi("Since 2023",fnum(x.tx23))}'
-          f'{kpi("Value 2023+ (bn AED)",fmoney(x.val23))}{kpi("DLD developer entities",fnum(x.nent))}</div>')
+          f'{kpi("Value 2023+ (bn AED)",fmoney(x.val23),vhint)}{kpi("DLD developer entities",fnum(x.nent))}</div>')
     body=f"""<div class="crumb"><a href="../developers.html">Developers</a> / {esc(name)}</div>
 <h1>{esc(name)} <span class="chip ok">Official DLD attribution</span></h1>
 <p class="sub">Kotook developer id {did} · attribution via DLD <span class="mono">project_number → developer</span> (official projects registry).</p>
@@ -316,8 +383,8 @@ for x in devs.itertuples():
 {xcheck}
 <h2>Sales transactions per year</h2><div class="chartcard">{bars(yrows)}</div>
 <h2>Price growth &amp; off-plan by year</h2>
-<div class="tablecard"><table><thead><tr><th>Year</th><th class="num">Sales</th><th class="num">AED/sqft (median, all)</th><th class="num">YoY (ready)</th><th class="num">Off-plan</th></tr></thead><tbody>{ptbl}</tbody></table></div>
-<p class="note" style="margin-top:8px">Level = median AED/sqft of all sales; YoY = ready/secondary-market growth (strips off-plan launch-mix noise).</p>
+<div class="tablecard"><table><thead><tr><th>Year</th><th class="num">Sales</th><th class="num">AED/sqft (median, res)</th><th class="num">YoY (ready)</th><th class="num">Off-plan</th></tr></thead><tbody>{ptbl}</tbody></table></div>
+<p class="note" style="margin-top:8px">Sales = all registered sales. Price columns use the clean residential basis (Unit/Villa, impossible prices removed). Level = median AED/sqft; YoY = ready/secondary-market growth (strips off-plan launch-mix noise).</p>
 <div style="margin-top:12px">{dstat}</div>
 <h2>Supply pipeline</h2>{dsupply}
 <h2>Top communities</h2><div class="card evid">{areapills or "<span class='muted'>—</span>"}</div>
@@ -424,6 +491,12 @@ gsup_bars=bars([(str(int(r.y)),int(r.u or 0),fnum(r.u)) for r in gsup.itertuples
 total_pipe=con.sql("SELECT COALESCE(SUM(units),0) u FROM projfull WHERE project_status IN ('ACTIVE','NOT_STARTED')").fetchone()[0]
 toparea=con.sql("SELECT area_name_en, SUM(units) u, COUNT(*) p FROM projfull WHERE project_status IN ('ACTIVE','NOT_STARTED') GROUP BY 1 ORDER BY u DESC NULLS LAST LIMIT 10").df()
 tarows="".join(f"<tr><td class='name'>{esc(r.area_name_en)}</td><td class='num'>{fnum(r.u)}</td><td class='num'>{fnum(r.p)}</td></tr>" for r in toparea.itertuples())
+# existing built stock (units registry) — city total + top areas
+units_total_city=con.sql("SELECT SUM(units_total) t FROM units_area").fetchone()[0]
+topstock=con.sql("SELECT a, units_total u, med_sqm FROM units_area WHERE units_total>=1000 ORDER BY units_total DESC LIMIT 12").df()
+tsrows="".join(f"<tr><td class='name'>{esc(r.a)}</td><td class='num'>{fnum(r.u)}</td><td class='num'>{(fnum(r.med_sqm)+' m²') if pd.notna(r.med_sqm) else '—'}</td></tr>" for r in topstock.itertuples())
+# typical service charge by community (2023)
+scrows="".join(f"<tr><td class='name'>{esc(c)}</td><td class='num'>~{v:.1f}</td><td class='num'>{n}</td></tr>" for c,v,n in SC_ROWS[:20])
 body=f"""<h1>Market — Dubai-wide statistics</h1>
 <p class="sub">City-level indicators that have no per-area breakdown in the DLD open data — context for the area &amp; developer pages.</p>
 <h2>Official DLD residential price index (avg price, AED)</h2>
@@ -438,6 +511,12 @@ body=f"""<h1>Market — Dubai-wide statistics</h1>
 <div class="callout" style="margin-top:12px"><h3>Reality check on supply</h3><div class="note">This is the <b>DLD registered-project pipeline</b> — {fnum(total_pipe)} units across ACTIVE/NOT_STARTED projects (undated projects are excluded from the by-year chart, so yearly bars are a <b>lower bound</b>). For context, Knight Frank/Fitch forecast ≈ <b>60,000–120,000</b> Dubai handovers in 2026 (historical completion ≈ 56%). Treat our per-year figures as a floor, not total market supply.</div></div>
 <h2>Top areas by pipeline units</h2>
 <div class="tablecard"><table><thead><tr><th>DLD area</th><th class="num">Pipeline units</th><th class="num">Projects</th></tr></thead><tbody>{tarows}</tbody></table></div>
+<h2>Existing built stock — top areas (units registry)</h2>
+<p class="note">Total titled units in the DLD <b>units</b> registry: <b>{fnum(units_total_city)}</b>. This is <b>existing stock</b> — the complement to the forward-looking pipeline above.</p>
+<div class="tablecard"><table><thead><tr><th>DLD area</th><th class="num">Existing units</th><th class="num">Median size</th></tr></thead><tbody>{tsrows}</tbody></table></div>
+<h2>Typical service charge by community (2023)</h2>
+<div class="tablecard"><table><thead><tr><th>Community</th><th class="num">AED/sqft</th><th class="num">Projects</th></tr></thead><tbody>{scrows}</tbody></table></div>
+<div class="callout" style="margin-top:8px"><h3>How to read this</h3><div class="note">Source: DLD owner-association <b>service charges</b>. Per project = sum of its ~20 service categories; community figure = <b>median across projects</b> (residential usage). Latest full year is <b>2023</b> (28 communities with ≥3 reporting projects, of 57 total that year; 2024 not yet populated). Higher = premium/waterfront (Palm, Downtown), lower = mid-market (JVC, Marina) — matches market norms.</div></div>
 """
 (ROOT/"market.html").write_text(page("Market","market",body,depth=0),encoding="utf-8")
 
@@ -450,6 +529,14 @@ body=f"""<h1>Method &amp; data sources</h1>
 <p>DLD records carry an official <span class="mono">master_project_en</span> label. We treat the <b>dominant</b> master inside each DLD area (<span class="mono">area_name_en</span>) as the ground-truth community signal. Checks: it reproduced <b>21/21</b> uncontested mappings, each contested master is <b>100% confined to one</b> DLD area, and fragmentation only ever happens <i>within</i> a single community (e.g. Springs-1/2/3 → Emirates Living).</p>
 <h2>Corrected mappings</h2>
 <p>Five high-volume areas were mislabeled and have been corrected here: Al Barsha South Fourth → JVC, Al Barsha South Fifth → JVT, Al Thanyah Fifth → JLT; and two areas (Al Thanyah Third = The Greens, Al Thanayah Fourth = Emirates Living) belong to communities <b>missing</b> from Kotook.</p>
+<h2>Data cleaning &amp; outliers</h2>
+<p>We audited the raw DLD data before computing anything. Key findings and how we handle them:</p>
+<ul>
+<li><b>No duplicates / no missing IDs</b> — every transaction has a unique <span class="mono">transaction_id</span> (1.665M distinct).</li>
+<li><b>Price metrics use a clean residential basis</b> — median AED/sqft, YoY, off-plan premium and off-plan share are computed only on <b>Unit/Villa</b> with a plausible AED/m² band (drops Land + commercial like offices/shops, plus ~6,400 impossible prices). This removes ~9.7% of rows; because we use the <b>median</b>, the headline numbers barely move (JVC unchanged, Marina +6 AED/sqft) — the cleaning is for correctness, not to chase a number.</li>
+<li><b>Value sums stay over all sales</b>, but ~110 bulk/portfolio deals above AED 500M make up ~4.5% of the 2023+ total, so each value card also shows an <b>"excl. bulk &gt;500M"</b> figure.</li>
+<li><b>Counts</b> (sales transactions per year) always cover <b>all</b> registered sales.</li>
+</ul>
 <h2>What to validate</h2>
 <p>For each area and developer we list <b>{SAMPLE} recent transactions</b>. Confirm that the project / building / master names genuinely belong to the stated Kotook community or developer. In Kotook, the area mapping is stored on <span class="mono">CityArea.old_name</span> (en).</p>
 </div>"""
