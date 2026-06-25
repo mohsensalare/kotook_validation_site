@@ -60,13 +60,27 @@ def page(title, active, body, depth=0):
 source: pipeline deliverable <b>kotook_market.duckdb</b> · DLD Sales transactions</div></footer>
 </body></html>"""
 
-def bars(rows):  # rows: list of (label_x, value, label_top)
+def bars(rows, color=None):  # rows: list of (label_x, value, label_top)
     mx = max([r[1] for r in rows] or [1]) or 1
+    sty = f";background:{color}" if color else ""
     cells = ""
     for yr, v, lab in rows:
         h = max(2, round(100 * v / mx))
-        cells += f'<div class="bar"><div class="v">{esc(lab)}</div><div class="col" style="height:{h}%"></div><div class="yr">{esc(yr)}</div></div>'
+        cells += f'<div class="bar"><div class="v">{esc(lab)}</div><div class="col" style="height:{h}%{sty}"></div><div class="yr">{esc(yr)}</div></div>'
     return f'<div class="bars">{cells}</div>'
+
+SEG_HEX = {"offplan": "#2563eb", "secondary": "#0d9488", "all": "#16a34a"}
+def segbars(rows, seg):  # per-segment colored bars
+    return bars(rows, SEG_HEX.get(seg))
+
+def seg_section(seg, kpis_html, bars_html, chart_caption="", sub=""):
+    """One full, visually-distinct section for a single segment: heading + KPIs + own chart."""
+    subhtml = f'<p class="note" style="margin:-2px 0 12px">{sub}</p>' if sub else ""
+    cap = f'<div class="note" style="margin-bottom:6px">{chart_caption}</div>' if chart_caption else ""
+    return (f'<div class="segsection box-{seg}">'
+            f'<div class="segsection-h"><span class="tag">{SEG_LABEL[seg]}</span></div>'
+            f'{subhtml}{kpis_html}'
+            f'<div class="chartcard" style="margin-top:14px">{cap}{bars_html}</div></div>')
 
 def kpi(label, val, hint="", green=False):
     g = " green" if green else ""
@@ -86,6 +100,45 @@ def seg_compare(rows, items):
         tds = "".join(f'<td class="num seg-{c}">{fn(rows.get(c))}</td>' for c in cols)
         body += f"<tr><td>{label}</td>{tds}</tr>"
     return f'<div class="tablecard segcmp"><table><thead><tr><th>Metric</th>{th}</tr></thead><tbody>{body}</tbody></table></div>'
+
+def three_sections(rows, kpi_fn, yr_df, keycol=None, keyval=None, caption="Sales transactions per year"):
+    """Render three visually-separate sections (off-plan, secondary, combined), each with
+    its own full KPI numbers and its own colored per-year chart."""
+    out = ""
+    for seg in ("offplan", "secondary", "all"):
+        r = rows.get(seg)
+        if r is None:
+            continue
+        sub = yr_df[yr_df.segment == seg]
+        if keycol is not None:
+            sub = sub[sub[keycol] == keyval]
+        sub = sub.sort_values("year")
+        yrows = [(str(int(x.year)), int(x.tx), fnum(x.tx)) for x in sub.itertuples() if pd.notna(x.year)]
+        chart = segbars(yrows, seg) if yrows else "<span class='muted'>no dated rows</span>"
+        out += seg_section(seg, kpi_fn(seg, r), chart, chart_caption=caption)
+    return out
+
+def yield_section(ry, level="area"):
+    """Rental-yield block. ry: namedtuple from area_rent_yield (area) or a Series (market)."""
+    def g(name):
+        v = getattr(ry, name, None)
+        return v
+    ys = g("gross_yield_secondary_pct"); ya = g("gross_yield_all_pct")
+    rpsf = g("rent_psf"); mar = g("med_annual_rent"); n = g("n_rent")
+    if ys is None or pd.isna(ys):
+        return ""
+    blocks = (f'<div><div class="lbl">Gross yield · vs ready price</div><div class="big">{float(ys):.1f}%</div></div>'
+              f'<div><div class="lbl">vs all-market price</div><div class="v2">{(f"{float(ya):.1f}%" if pd.notna(ya) else "—")}</div></div>'
+              f'<div><div class="lbl">Median rent / sqft / yr</div><div class="v2">{fnum(rpsf)} AED</div></div>'
+              f'<div><div class="lbl">Median annual rent</div><div class="v2">{fnum(mar)} AED</div></div>'
+              f'<div><div class="lbl">Rent contracts ({RENT_YEAR})</div><div class="v2">{fnum(n)}</div></div>')
+    note = (f'Gross rental yield = median residential rent per sqft ÷ median <b class="seg-secondary">ready/secondary</b> '
+            f'sale price per sqft ({RENT_YEAR}). Ejari covers only existing rented stock, so it pairs with the ready '
+            f'price; the all-market figure (which includes the off-plan premium) is shown for context. Service charges '
+            f'and voids are not deducted (this is a <b>gross</b> yield).')
+    return (f'<h2>Rental yield (Ejari, {RENT_YEAR})</h2>'
+            f'<div class="yieldcard"><div class="yieldwrap">{blocks}</div>'
+            f'<p class="note" style="margin:14px 0 0">{note}</p></div>')
 
 def year_segment_table(yr_df, keycol, keyval):
     sub = yr_df[yr_df[keycol] == keyval]
@@ -127,6 +180,11 @@ MSUPY = con.sql("SELECT * FROM market_supply_year ORDER BY year").df()
 MSUPA = con.sql("SELECT * FROM market_supply_area ORDER BY pipeline_units DESC NULLS LAST").df()
 MSC   = con.sql("SELECT * FROM market_service_charge ORDER BY aed_sqft DESC").df()
 MSTK  = con.sql("SELECT * FROM market_existing_stock ORDER BY existing_units DESC").df()
+ARY   = con.sql("SELECT * FROM area_rent_yield").df()
+MRY   = con.sql("SELECT * FROM market_rent_yield").df()
+MRYR  = con.sql("SELECT * FROM market_rent_year ORDER BY year").df()
+ARY_BY_AREA = {r.dld_area: r for r in ARY.itertuples()}
+RENT_YEAR = int(MRYR.year.max()) if len(MRYR) else None
 
 BENCH = {
  'Emaar Properties':{'n':'28,521','note':'2024 off-plan units (Primo Capital); AED 65.4bn dev sales (Emaar)','url':'https://primocapital.ae/blog/10-top-performing-uae-real-estate-developers-of-2024-key-stats-and-success'},
@@ -161,7 +219,7 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
             f'{kpi("Value 2023+ (bn AED)", fmoney(a.value_bn_2023plus), vhint)}'
             f'{kpi("Off-plan share 2023+", fpct(a.offplan_share_2023plus_pct))}</div>')
 
-    # off-plan vs secondary vs combined
+    # off-plan vs secondary vs combined — at-a-glance contrast table
     seg_tbl = seg_compare(rows, [
         ("Sales transactions (all years)", lambda r: fnum(r.tx_total) if r is not None else "—"),
         ("Sales since 2023",              lambda r: fnum(r.tx_2023plus) if r is not None else "—"),
@@ -175,10 +233,16 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
                 f"Counts cover all registered sales; prices use the clean residential basis (Unit/Villa).</p>"
                 if pd.notna(prem) else "")
 
-    # transactions per year (combined) + by-segment table
-    yr_all = AYR[(AYR.dld_area == dld) & (AYR.segment == "all")].sort_values("year")
-    yrows = [(str(int(x.year)), int(x.tx), fnum(x.tx)) for x in yr_all.itertuples()]
-    yseg = year_segment_table(AYR, "dld_area", dld)
+    # three fully-separate sections (each with its own numbers + colored chart)
+    def area_kpis(seg, r):
+        vh = (f"excl. bulk >500M: {fmoney(r.value_bn_excl_bulk_2023plus)} bn"
+              if (float(r.value_bn_2023plus or 0) - float(r.value_bn_excl_bulk_2023plus or 0)) >= 0.05 else "")
+        return (f'<div class="grid k4">{kpi("Sales transactions", fnum(r.tx_total))}'
+                f'{kpi("Since 2023", fnum(r.tx_2023plus))}'
+                f'{kpi("Value 2023+ (bn AED)", fmoney(r.value_bn_2023plus), vh)}'
+                f'{kpi("Median AED/sqft (2024+)", fnum(r.median_aed_sqft_2024plus))}</div>')
+    seg_sections = three_sections(rows, area_kpis, AYR, "dld_area", dld)
+    yield_block = yield_section(ARY_BY_AREA[dld]) if dld in ARY_BY_AREA else ""
 
     # supply & absorption
     hy = ASY[ASY.dld_area == dld].sort_values("year")
@@ -236,14 +300,13 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
 <h1>{esc(dld)} {chips}</h1>
 <p class="sub">Mapped to Kotook community: <b>{esc(a.kotook_area)}</b>{(' · id '+str(int(a.kotook_area_id))) if pd.notna(a.kotook_area_id) else ''}</p>
 {kpis}
-<h2>Off-plan vs secondary vs combined</h2>
+<h2>Off-plan vs secondary — at a glance</h2>
 {seg_tbl}{seg_note}
-<h2>Sales transactions per year (combined)</h2>
-<div class="chartcard">{bars(yrows)}</div>
-<h2>Split by segment, per year</h2>
-{yseg}
-<p class="note" style="margin-top:8px">Off-plan = primary (developer) sales; Secondary = ready/resale. Prices use a clean residential basis (Unit/Villa, impossible AED/m² removed). The secondary column is the cleanest read on real price growth — off-plan launch waves can't distort it.</p>
-<div style="margin-top:12px">{stats}</div>
+<h2>Three separate views — full numbers &amp; charts</h2>
+<p class="note" style="margin:-6px 0 14px">Off-plan = primary (developer) sales · Secondary = ready/resale · Combined = both. Each section below has its own figures and its own per-year chart. Prices use a clean residential basis (Unit/Villa, impossible AED/m² removed); the secondary view is the cleanest read on real price growth — off-plan launch waves can't distort it.</p>
+{seg_sections}
+{yield_block}
+<div style="margin-top:4px">{stats}</div>
 <h2>Supply &amp; absorption</h2>
 {supply_card}
 {stock_section}
@@ -286,9 +349,14 @@ for did in DST[DST.segment == "all"].kotook_developer_id.tolist():
         ("Median AED/sqft (2024+)",       lambda r: fnum(r.median_aed_sqft_2024plus) if r is not None else "—"),
     ])
 
-    yr_all = DYR[(DYR.kotook_developer_id == did) & (DYR.segment == "all")].sort_values("year")
-    yrows = [(str(int(x.year)), int(x.tx), fnum(x.tx)) for x in yr_all.itertuples()]
-    yseg = year_segment_table(DYR, "kotook_developer_id", did)
+    def dev_kpis(seg, r):
+        vh = (f"excl. bulk >500M: {fmoney(r.value_bn_excl_bulk_2023plus)} bn"
+              if (float(r.value_bn_2023plus or 0) - float(r.value_bn_excl_bulk_2023plus or 0)) >= 0.05 else "")
+        return (f'<div class="grid k4">{kpi("Sales transactions", fnum(r.tx_total))}'
+                f'{kpi("Since 2023", fnum(r.tx_2023plus))}'
+                f'{kpi("Sales 2024", fnum(r.tx_2024))}'
+                f'{kpi("Median AED/sqft (2024+)", fnum(r.median_aed_sqft_2024plus), vh)}</div>')
+    seg_sections = three_sections(rows, dev_kpis, DYR, "kotook_developer_id", did)
 
     hy = DSY[DSY.kotook_developer_id == did].sort_values("year")
     hands = [(str(int(x.year)), int(x.pipeline_units or 0), fnum(x.pipeline_units)) for x in hy.itertuples() if pd.notna(x.year)][:4]
@@ -327,12 +395,12 @@ for did in DST[DST.segment == "all"].kotook_developer_id.tolist():
 <p class="sub">Kotook developer id {sl} · attribution via DLD <span class="mono">project_number → developer</span> (official projects registry).</p>
 {kpis}
 {xcheck}
-<h2>Off-plan vs secondary vs combined</h2>
+<h2>Off-plan vs secondary — at a glance</h2>
 {seg_tbl}
 <p class="note" style="margin-top:8px">Off-plan = primary launches; Secondary = resales of this developer's delivered stock. Counts are all registered sales; prices use the clean residential basis.</p>
-<h2>Sales transactions per year (combined)</h2><div class="chartcard">{bars(yrows)}</div>
-<h2>Split by segment, per year</h2>
-{yseg}
+<h2>Three separate views — full numbers &amp; charts</h2>
+<p class="note" style="margin:-6px 0 14px">Each section below has its own figures and its own per-year chart.</p>
+{seg_sections}
 <h2>Supply pipeline</h2>{dsupply}
 <h2>Top communities</h2><div class="card evid">{areapills}</div>
 <h2>DLD developer entities mapped to this brand</h2><div class="card">{entpills}</div>
@@ -371,15 +439,21 @@ seg_tbl = seg_compare(mall, [
     ("Value 2023+ (bn AED)",          lambda r: fmoney(r.value_bn_2023plus) if r is not None else "—"),
     ("Median AED/sqft (2024+)",       lambda r: fnum(r.median_aed_sqft_2024plus) if r is not None else "—"),
 ])
+def city_kpis(seg, r):
+    return (f'<div class="grid k4">{kpi("Sales transactions", fnum(r.tx_total))}'
+            f'{kpi("Since 2023", fnum(r.tx_2023plus))}'
+            f'{kpi("Value 2023+ (bn AED)", fmoney(r.value_bn_2023plus))}'
+            f'{kpi("Median AED/sqft (2024+)", fnum(r.median_aed_sqft_2024plus))}</div>')
+city_sections = three_sections(mall, city_kpis, MYR)
 body = f"""<h1>DLD ↔ Kotook data validation</h1>
 <p class="sub">A working dataset for the team to review and confirm. Every area and developer carries {SAMPLE} sample transactions, split into <b class="seg-offplan">off-plan</b> and <b class="seg-secondary">secondary</b>. Built from the pipeline deliverable <span class="mono">kotook_market.duckdb</span> ({esc(META.get("build_date"))}).</p>
 {kpis}
 <div class="legend"><span><i style="background:var(--green)"></i>Confirmed ({n_ok})</span><span><i style="background:var(--amber)"></i>Needs review ({n_warn})</span><span><i style="background:var(--green-d)"></i>Corrected mappings ({n_corr})</span></div>
-<h2>Off-plan vs secondary — the whole Dubai market</h2>
+<h2>Off-plan vs secondary — at a glance (whole Dubai market)</h2>
 {seg_tbl}
-<p class="note" style="margin-top:8px">Off-plan is <b>{op_share_all}%</b> of all registered sales since records began and <b>{op_share_23}%</b> since 2023 — Kotook's core market. Secondary (ready/resale) is the rest. Every area and developer page repeats this split.</p>
-<h2>Dubai sales transactions per year (all DLD)</h2>
-<div class="chartcard">{bars(gyrows)}</div>
+<p class="note" style="margin-top:8px">Off-plan is <b>{op_share_all}%</b> of all registered sales since records began and <b>{op_share_23}%</b> since 2023 — Kotook's core market. Secondary (ready/resale) is the rest. Every area and developer page repeats this split into three separate sections.</p>
+<h2>Three separate views — full numbers &amp; charts</h2>
+{city_sections}
 <h2>Browse</h2>
 <div class="grid k2"><a class="card" href="areas.html"><div class="kpi"><div class="label">Areas</div><div class="val green">{len(area_index)}</div><div class="hint">DLD areas mapped to Kotook communities →</div></div></a>
 <a class="card" href="developers.html"><div class="kpi"><div class="label">Developers</div><div class="val green">{len(dev_index)}</div><div class="hint">official DLD project→developer attribution →</div></div></a></div>
@@ -469,6 +543,52 @@ for y in sorted(int(x) for x in MYR.year.dropna().unique()):
     myr_rows += (f"<tr><td>{y}</td><td class='num seg-offplan'>{mc('offplan','tx')}</td><td class='num seg-secondary'>{mc('secondary','tx')}</td>"
                  f"<td class='num seg-offplan'>{mc('offplan','median_aed_sqft')}</td><td class='num seg-secondary'>{mc('secondary','median_aed_sqft')}</td></tr>")
 
+# ---- rental yield (city) ----
+ry_section = ""
+mry_all = MRY[MRY.prop_type == "all"]
+if len(mry_all) and pd.notna(mry_all.iloc[0].gross_yield_secondary_pct):
+    ma = mry_all.iloc[0]
+    typ_rows = ""
+    for t in ["all", "apartment", "villa"]:
+        m = MRY[MRY.prop_type == t]
+        if not len(m): continue
+        m = m.iloc[0]
+        typ_rows += (f"<tr><td class='name'>{t.title()}</td><td class='num'>{fnum(m.rent_psf)}</td>"
+                     f"<td class='num'>{fnum(m.med_annual_rent)}</td>"
+                     f"<td class='num seg-secondary'>{float(m.gross_yield_secondary_pct):.1f}%</td>"
+                     f"<td class='num'>{float(m.gross_yield_all_pct):.1f}%</td></tr>")
+    rent_bars = bars([(str(int(r.year)), int(r.rent_psf), fnum(r.rent_psf)) for r in MRYR.itertuples()], color="#0d9488")
+    arr = ARY[ARY.kotook_area.notna() & ARY.gross_yield_secondary_pct.notna() & (ARY.n_rent >= 200)].copy()
+    top = arr.sort_values("gross_yield_secondary_pct", ascending=False).head(8)
+    bot = arr.sort_values("gross_yield_secondary_pct", ascending=True).head(8)
+    def _yrow(r):
+        return (f"<tr><td class='name'>{esc(r.kotook_area)}</td><td class='muted'>{esc(r.dld_area)}</td>"
+                f"<td class='num'>{fnum(r.rent_psf)}</td><td class='num'>{fnum(r.sale_psf_secondary)}</td>"
+                f"<td class='num seg-secondary'>{float(r.gross_yield_secondary_pct):.1f}%</td></tr>")
+    toprows = "".join(_yrow(r) for r in top.itertuples())
+    botrows = "".join(_yrow(r) for r in bot.itertuples())
+    ry_section = f"""<h2>Rental yield (Ejari rent contracts, {RENT_YEAR})</h2>
+<div class="yieldcard"><div class="yieldwrap">
+<div><div class="lbl">City gross yield · vs ready price</div><div class="big">{float(ma.gross_yield_secondary_pct):.1f}%</div></div>
+<div><div class="lbl">vs all-market price</div><div class="v2">{float(ma.gross_yield_all_pct):.1f}%</div></div>
+<div><div class="lbl">Median rent / sqft / yr</div><div class="v2">{fnum(ma.rent_psf)} AED</div></div>
+<div><div class="lbl">Median annual rent</div><div class="v2">{fnum(ma.med_annual_rent)} AED</div></div>
+<div><div class="lbl">Rent contracts ({RENT_YEAR})</div><div class="v2">{fnum(ma.n_rent)}</div></div>
+</div>
+<p class="note" style="margin:14px 0 0">Gross yield = median residential rent per sqft ÷ median <b class="seg-secondary">ready/secondary</b> sale price per sqft. Ejari covers only existing rented stock, so it pairs with the ready price; the all-market figure (incl. the off-plan premium) is shown for context. Gross — service charges &amp; voids not deducted.</p></div>
+<div class="grid k2" style="margin-top:14px">
+<div><div class="tablecard"><table><thead><tr><th>Type</th><th class="num">Rent/sqft</th><th class="num">Median rent</th><th class="num seg-secondary">Yield (ready)</th><th class="num">Yield (all)</th></tr></thead><tbody>{typ_rows}</tbody></table></div>
+<p class="note" style="margin-top:6px">Apartments yield more than villas — the usual Dubai pattern.</p></div>
+<div class="chartcard"><div class="note" style="margin-bottom:6px">City median residential rent per sqft (AED/yr) — the rent cycle: COVID dip then recovery</div>{rent_bars}</div>
+</div>
+<div class="grid k2" style="margin-top:14px">
+<div><div class="note" style="margin-bottom:6px"><b>Highest-yield</b> Kotook communities ({RENT_YEAR}, ≥200 contracts)</div>
+<div class="tablecard"><table><thead><tr><th>Community</th><th>DLD area</th><th class="num">Rent/sqft</th><th class="num">Ready price/sqft</th><th class="num seg-secondary">Yield</th></tr></thead><tbody>{toprows}</tbody></table></div></div>
+<div><div class="note" style="margin-bottom:6px"><b>Lowest-yield</b> (premium / capital-growth) communities</div>
+<div class="tablecard"><table><thead><tr><th>Community</th><th>DLD area</th><th class="num">Rent/sqft</th><th class="num">Ready price/sqft</th><th class="num seg-secondary">Yield</th></tr></thead><tbody>{botrows}</tbody></table></div></div>
+</div>
+"""
+
 tarows = "".join(f"<tr><td class='name'>{esc(r.dld_area)}</td><td class='num'>{fnum(r.pipeline_units)}</td><td class='num'>{fnum(r.pipeline_projects)}</td></tr>" for r in MSUPA.head(10).itertuples())
 tsrows = "".join(f"<tr><td class='name'>{esc(r.dld_area)}</td><td class='num'>{fnum(r.existing_units)}</td><td class='num'>{(fnum(r.median_unit_size_sqm)+' m²') if pd.notna(r.median_unit_size_sqm) else '—'}</td></tr>" for r in MSTK[MSTK.existing_units >= 1000].head(12).itertuples())
 scrows = "".join(f"<tr><td class='name'>{esc(r.community)}</td><td class='num'>~{float(r.aed_sqft):.1f}</td><td class='num'>{int(r.n_proj)}</td></tr>" for r in MSC.head(20).itertuples())
@@ -478,6 +598,7 @@ body = f"""<h1>Market — Dubai-wide statistics</h1>
 <h2>Off-plan vs secondary, per year (city-wide)</h2>
 <div class="tablecard"><table><thead><tr><th>Year</th><th class="num seg-offplan">Off-plan tx</th><th class="num seg-secondary">Secondary tx</th><th class="num seg-offplan">Off-plan AED/sqft</th><th class="num seg-secondary">Secondary AED/sqft</th></tr></thead><tbody>{myr_rows}</tbody></table></div>
 <p class="note" style="margin-top:8px">Counts = all registered sales; prices use the clean residential basis. Off-plan is Kotook's core market; this is the city-wide reference for every area page's split.</p>
+{ry_section}
 <h2>Official DLD residential price index (avg price, AED)</h2>
 <div class="chartcard">{idx_bars}</div>
 <div class="tablecard" style="margin-top:14px"><table><thead><tr><th>Year</th><th class="num">All</th><th class="num">Flat</th><th class="num">Villa</th><th class="num">YoY (all)</th></tr></thead><tbody>{itbl}</tbody></table></div>
@@ -517,6 +638,8 @@ body = f"""<h1>Method &amp; data sources</h1>
 <li><b>Value sums stay over all sales</b>, but bulk/portfolio deals above AED 500M (~{esc(META.get("bulk_value_pct"))}% of the 2023+ total) get an <b>"excl. bulk &gt;500M"</b> figure on each value card.</li>
 <li><b>Counts</b> always cover all registered sales.</li>
 </ul>
+<h2>Rental yield (Ejari)</h2>
+<p>From the DLD <b>Rent Contracts (Ejari)</b> registry ({fnum(int(MRY[MRY.prop_type=='all'].iloc[0].n_rent)) if len(MRY) and pd.notna(MRY[MRY.prop_type=='all'].iloc[0].gross_yield_secondary_pct) else '—'} residential contracts in {RENT_YEAR}). Gross yield = median residential <b>rent per sqft</b> ÷ median <b class="seg-secondary">secondary/ready</b> <b>sale price per sqft</b> for the same year. Ejari only records rents of <b>existing</b> stock, so it is paired with the ready price (the apples-to-apples read); the all-market price (which carries the off-plan premium) understates yield and is shown only for context. It is a <b>gross</b> figure — service charges and vacancy are not deducted. City gross yield: <b>{(f"{float(MRY[MRY.prop_type=='all'].iloc[0].gross_yield_secondary_pct):.1f}%" if len(MRY) and pd.notna(MRY[MRY.prop_type=='all'].iloc[0].gross_yield_secondary_pct) else '—')}</b>.</p>
 <h2>What to validate</h2>
 <p>For each area and developer we list <b>{SAMPLE} recent transactions</b> with their segment. Confirm that project / building / master names genuinely belong to the stated Kotook community or developer. In Kotook, the area mapping is stored on <span class="mono">CityArea.old_name</span> (en).</p>
 </div>"""

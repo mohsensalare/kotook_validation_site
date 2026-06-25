@@ -131,4 +131,28 @@ th.seg-secondary{color:var(--teal)}
 .segdot{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:capitalize}
 .segdot.seg-offplan{background:var(--blue-soft);color:var(--blue)}
 .segdot.seg-secondary{background:var(--teal-soft);color:var(--teal)}
+.segdot.seg-all{background:var(--green-soft);color:var(--green-d)}
 .segdot.seg-other{background:var(--line);color:var(--muted)}
+
+/* ---- three separate segment sections (off-plan / secondary / combined) ---- */
+.segsection{border:1px solid var(--line);border-left-width:5px;border-radius:var(--radius);
+  padding:16px 18px 18px;margin:0 0 16px;background:#fff;box-shadow:var(--shadow)}
+.segsection.box-offplan{border-left-color:var(--blue)}
+.segsection.box-secondary{border-left-color:var(--teal)}
+.segsection.box-all{border-left-color:var(--green)}
+.segsection-h{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-size:15px;font-weight:800;color:var(--ink)}
+.segsection-h .tag{font-size:18px;font-weight:800;letter-spacing:-.3px}
+.segsection.box-offplan .segsection-h .tag{color:var(--blue)}
+.segsection.box-secondary .segsection-h .tag{color:var(--teal)}
+.segsection.box-all .segsection-h .tag{color:var(--green-d)}
+.segsection .grid{margin-bottom:0}
+.segsection .bars{height:128px}
+.seggrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:900px){.seggrid{grid-template-columns:1fr}}
+
+/* ---- rental yield ---- */
+.yieldcard{border:1px solid var(--green-soft);background:var(--green-tint);border-radius:var(--radius);padding:18px}
+.yieldwrap{display:flex;flex-wrap:wrap;gap:24px 40px;align-items:flex-end}
+.yieldwrap .big{font-size:38px;font-weight:800;color:var(--green-d);letter-spacing:-1.5px;line-height:1}
+.yieldwrap .lbl{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+.yieldwrap .v2{font-size:22px;font-weight:800;letter-spacing:-.5px;color:var(--ink)}

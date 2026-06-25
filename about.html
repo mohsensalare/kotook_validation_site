@@ -3,7 +3,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <title>Method · Kotook DLD Validation</title>
-<link rel="stylesheet" href="assets/style.css?v=20260625133806"></head><body>
+<link rel="stylesheet" href="assets/style.css?v=20260625175133"></head><body>
 <header class="top"><div class="wrap">
 <div class="brand"><span class="dot"></span>Kotook&nbsp;<small>DLD Data Validation</small></div>
 <nav class="main"><a class="" href="index.html">Overview</a><a class="" href="areas.html">Areas</a><a class="" href="developers.html">Developers</a><a class="" href="market.html">Market</a><a class="" href="compare.html">Compare</a><a class="active" href="about.html">Method</a></nav></div></header>
@@ -16,7 +16,7 @@
 <h2>Source &amp; the validation field</h2>
 <p>Dubai Land Department public <b>Transactions</b> — 1,274,696 <b>Sales</b> records (mortgages/gifts excluded). Area mapping is validated against the dominant <span class="mono">master_project_en</span> inside each DLD area; developer attribution follows the official <span class="mono">project_number → developer</span> chain.</p>
 <h2>Coverage</h2>
-<p>Area mapping covers <b>90%</b> of all sales (82 Kotook communities); the rest are listed on the <a href="areas.html">Areas</a> page as review candidates. Developer attribution covers <b>48.6%</b> of sales (the share linked to a DLD-registered project).</p>
+<p>Area mapping covers <b>90%</b> of all sales (82 Kotook communities); the rest are listed on the <a href="areas.html">Areas</a> page as review candidates. Developer attribution covers <b>49.0%</b> of sales (the share linked to a DLD-registered project).</p>
 <h2>Data cleaning &amp; outliers</h2>
 <ul>
 <li><b>No duplicates / no missing IDs</b> — every transaction has a unique <span class="mono">transaction_id</span>.</li>
@@ -24,6 +24,8 @@
 <li><b>Value sums stay over all sales</b>, but bulk/portfolio deals above AED 500M (~4.5% of the 2023+ total) get an <b>"excl. bulk &gt;500M"</b> figure on each value card.</li>
 <li><b>Counts</b> always cover all registered sales.</li>
 </ul>
+<h2>Rental yield (Ejari)</h2>
+<p>From the DLD <b>Rent Contracts (Ejari)</b> registry (1,146,844 residential contracts in 2025). Gross yield = median residential <b>rent per sqft</b> ÷ median <b class="seg-secondary">secondary/ready</b> <b>sale price per sqft</b> for the same year. Ejari only records rents of <b>existing</b> stock, so it is paired with the ready price (the apples-to-apples read); the all-market price (which carries the off-plan premium) understates yield and is shown only for context. It is a <b>gross</b> figure — service charges and vacancy are not deducted. City gross yield: <b>5.1%</b>.</p>
 <h2>What to validate</h2>
 <p>For each area and developer we list <b>20 recent transactions</b> with their segment. Confirm that project / building / master names genuinely belong to the stated Kotook community or developer. In Kotook, the area mapping is stored on <span class="mono">CityArea.old_name</span> (en).</p>
 </div></div></main>
