@@ -118,3 +118,17 @@ footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-s
   nav.main a{padding:6px 12px;font-size:13px}
   thead th{top:auto}
 }
+
+/* ---- segment (off-plan / secondary / combined) ---- */
+:root{ --blue:#2563eb; --blue-soft:#dbeafe; --teal:#0d9488; --teal-soft:#ccfbf1; }
+.seg-offplan{color:var(--blue)}
+.seg-secondary{color:var(--teal)}
+b.seg-offplan,b.seg-secondary{font-weight:700}
+th.seg-offplan{color:var(--blue)}
+th.seg-secondary{color:var(--teal)}
+.segcmp th.seg-all,.segcmp td.seg-all{background:var(--green-tint);font-weight:700}
+.segcmp td:first-child{font-weight:600;color:var(--ink)}
+.segdot{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:capitalize}
+.segdot.seg-offplan{background:var(--blue-soft);color:var(--blue)}
+.segdot.seg-secondary{background:var(--teal-soft);color:var(--teal)}
+.segdot.seg-other{background:var(--line);color:var(--muted)}

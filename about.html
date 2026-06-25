@@ -3,29 +3,30 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <title>Method · Kotook DLD Validation</title>
-<link rel="stylesheet" href="assets/style.css?v=20260625024622"></head><body>
+<link rel="stylesheet" href="assets/style.css?v=20260625133806"></head><body>
 <header class="top"><div class="wrap">
 <div class="brand"><span class="dot"></span>Kotook&nbsp;<small>DLD Data Validation</small></div>
 <nav class="main"><a class="" href="index.html">Overview</a><a class="" href="areas.html">Areas</a><a class="" href="developers.html">Developers</a><a class="" href="market.html">Market</a><a class="" href="compare.html">Compare</a><a class="active" href="about.html">Method</a></nav></div></header>
 <main><div class="wrap"><h1>Method &amp; data sources</h1>
-<p class="sub">How these mappings were built and validated.</p>
-<div class="card"><h2 style="margin-top:0">Source</h2>
-<p>Dubai Land Department public <b>Transactions</b> dataset — 1,274,696 <b>Sales</b> records (1998–2026), loaded into DuckDB. Mortgages and gifts are excluded from these views.</p>
-<h2>The validation field</h2>
-<p>DLD records carry an official <span class="mono">master_project_en</span> label. We treat the <b>dominant</b> master inside each DLD area (<span class="mono">area_name_en</span>) as the ground-truth community signal. Checks: it reproduced <b>21/21</b> uncontested mappings, each contested master is <b>100% confined to one</b> DLD area, and fragmentation only ever happens <i>within</i> a single community (e.g. Springs-1/2/3 → Emirates Living).</p>
-<h2>Corrected mappings</h2>
-<p>Five high-volume areas were mislabeled and have been corrected here: Al Barsha South Fourth → JVC, Al Barsha South Fifth → JVT, Al Thanyah Fifth → JLT; and two areas (Al Thanyah Third = The Greens, Al Thanayah Fourth = Emirates Living) belong to communities <b>missing</b> from Kotook.</p>
+<p class="sub">How these numbers are produced, segmented, and validated.</p>
+<div class="card"><h2 style="margin-top:0">One pipeline → one database</h2>
+<p>Every number on this site comes from a single deliverable, <span class="mono">kotook_market.duckdb</span>, produced by the <b>kotook_pipeline</b> notebook from the latest DLD open-data dump. To refresh each year: drop the new DLD CSVs into <span class="mono">puls_data/</span> and run the notebook — it auto-picks the newest valid file per dataset, recomputes every statistic, runs a validation gate, and writes the database + CSV/parquet exports. This site then just renders that database.</p>
+<h2>Off-plan vs secondary vs combined</h2>
+<p>Every statistic is split three ways using the DLD <span class="mono">reg_type_en</span> field: <b class="seg-offplan">off-plan</b> (primary / developer sales), <b class="seg-secondary">secondary</b> (ready / resale), and <b>combined</b>. Off-plan is <b>59%</b> of sales since 2023 — Kotook's core market. Price growth (YoY) is read off the secondary segment, which strips off-plan launch-mix noise.</p>
+<h2>Source &amp; the validation field</h2>
+<p>Dubai Land Department public <b>Transactions</b> — 1,274,696 <b>Sales</b> records (mortgages/gifts excluded). Area mapping is validated against the dominant <span class="mono">master_project_en</span> inside each DLD area; developer attribution follows the official <span class="mono">project_number → developer</span> chain.</p>
+<h2>Coverage</h2>
+<p>Area mapping covers <b>90%</b> of all sales (82 Kotook communities); the rest are listed on the <a href="areas.html">Areas</a> page as review candidates. Developer attribution covers <b>48.6%</b> of sales (the share linked to a DLD-registered project).</p>
 <h2>Data cleaning &amp; outliers</h2>
-<p>We audited the raw DLD data before computing anything. Key findings and how we handle them:</p>
 <ul>
-<li><b>No duplicates / no missing IDs</b> — every transaction has a unique <span class="mono">transaction_id</span> (1.665M distinct).</li>
-<li><b>Price metrics use a clean residential basis</b> — median AED/sqft, YoY, off-plan premium and off-plan share are computed only on <b>Unit/Villa</b> with a plausible AED/m² band (drops Land + commercial like offices/shops, plus ~6,400 impossible prices). This removes ~9.7% of rows; because we use the <b>median</b>, the headline numbers barely move (JVC unchanged, Marina +6 AED/sqft) — the cleaning is for correctness, not to chase a number.</li>
-<li><b>Value sums stay over all sales</b>, but ~110 bulk/portfolio deals above AED 500M make up ~4.5% of the 2023+ total, so each value card also shows an <b>"excl. bulk &gt;500M"</b> figure.</li>
-<li><b>Counts</b> (sales transactions per year) always cover <b>all</b> registered sales.</li>
+<li><b>No duplicates / no missing IDs</b> — every transaction has a unique <span class="mono">transaction_id</span>.</li>
+<li><b>Price metrics use a clean residential basis</b> — median AED/sqft, YoY, off-plan premium and share use only <b>Unit/Villa</b> in a plausible AED/m² band (drops Land + commercial + impossible prices, ~9.7% of rows). Because we use the <b>median</b>, headline numbers barely move — the cleaning is for correctness, not to chase a number.</li>
+<li><b>Value sums stay over all sales</b>, but bulk/portfolio deals above AED 500M (~4.5% of the 2023+ total) get an <b>"excl. bulk &gt;500M"</b> figure on each value card.</li>
+<li><b>Counts</b> always cover all registered sales.</li>
 </ul>
 <h2>What to validate</h2>
-<p>For each area and developer we list <b>20 recent transactions</b>. Confirm that the project / building / master names genuinely belong to the stated Kotook community or developer. In Kotook, the area mapping is stored on <span class="mono">CityArea.old_name</span> (en).</p>
+<p>For each area and developer we list <b>20 recent transactions</b> with their segment. Confirm that project / building / master names genuinely belong to the stated Kotook community or developer. In Kotook, the area mapping is stored on <span class="mono">CityArea.old_name</span> (en).</p>
 </div></div></main>
 <footer><div class="wrap">Kotook · DLD transaction validation · generated 2026-06-25 ·
-source: Dubai Land Department transactions (Sales) · evidence field: <b>master_project_en</b></div></footer>
+source: pipeline deliverable <b>kotook_market.duckdb</b> · DLD Sales transactions</div></footer>
 </body></html>
