@@ -250,7 +250,7 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
     hbars = bars(hands) if hands else "<span class='muted'>no dated handovers in DLD registry</span>"
     supply_card = (f'<div class="grid k3">{kpi("Pipeline units", fnum(a.pipeline_units), "under construction / planned")}'
                    f'{kpi("Pipeline projects", fnum(a.pipeline_projects))}'
-                   f'{kpi("Years of supply", (f"{a.years_of_supply:.1f}" if pd.notna(a.years_of_supply) else "—"), "pipeline ÷ avg annual sales")}</div>'
+                   f'{kpi("Years of supply", (f"{a.years_of_supply:.1f}" if pd.notna(a.years_of_supply) else "—"), "pipeline ÷ off-plan annual sales" + (f" · ready-market liquidity {a.years_of_supply_all:.1f}y" if pd.notna(getattr(a, "years_of_supply_all", None)) else ""))}</div>'
                    f'<div class="chartcard" style="margin-top:14px"><div class="note" style="margin-bottom:6px">Units handing over by year — '
                    f'<b>DLD registered-project pipeline (lower bound; undated projects excluded)</b></div>{hbars}</div>')
 
