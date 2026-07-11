@@ -5,7 +5,10 @@
 import duckdb, pandas as pd, re, json, html, datetime, pathlib
 
 ROOT  = pathlib.Path(__file__).parent
-DB    = "/Users/mohsensalare/Desktop/dld_transactions_analysis/kotook_market.duckdb"
+# deliverable lives in the sibling analysis dir; resolve relative to this script so the tree can move
+DB    = next((str(p) for p in (ROOT.parent / "dld_transactions_analysis" / "kotook_market.duckdb",
+                               pathlib.Path("/Users/mohsensalare/Desktop/dld_transactions_analysis/kotook_market.duckdb"))
+              if p.exists()), str(ROOT.parent / "dld_transactions_analysis" / "kotook_market.duckdb"))
 con   = duckdb.connect(DB, read_only=True)
 TODAY = datetime.date.today().isoformat()
 BUILD = datetime.datetime.now().strftime("%Y%m%d%H%M%S")  # cache-buster
@@ -186,6 +189,84 @@ MRYR  = con.sql("SELECT * FROM market_rent_year ORDER BY year").df()
 ARY_BY_AREA = {r.dld_area: r for r in ARY.itertuples()}
 RENT_YEAR = int(MRYR.year.max()) if len(MRYR) else None
 
+# ---------- price-by-bedroom, trailing 12 months (area pages) ----------
+SQFT = 10.7639
+BED_MIN_N = 15                                        # hide medians built on too few sales
+BED_LABEL = {0: "Studio", 1: "1 BR", 2: "2 BR", 3: "3 BR", 4: "4 BR", 5: "5+ BR"}
+_bedcase  = ("CASE rooms_en WHEN 'Studio' THEN 0 WHEN '1 B/R' THEN 1 WHEN '2 B/R' THEN 2 "
+             "WHEN '3 B/R' THEN 3 WHEN '4 B/R' THEN 4 ELSE 5 END")
+_bedwhere = ("is_clean_residential "
+             "AND rooms_en IN ('Studio','1 B/R','2 B/R','3 B/R','4 B/R','5 B/R','6 B/R','7 B/R','8 B/R','9 B/R') "
+             "AND instance_date >= (SELECT MAX(instance_date) - INTERVAL 12 MONTH FROM transactions_clean)")
+_bp_seg = con.sql(f"""SELECT dld_area, segment, {_bedcase} bed, COUNT(*) n,
+                        MEDIAN(actual_worth) med_price, MEDIAN(meter_sale_price)/{SQFT} aed_sqft
+                      FROM transactions_clean WHERE {_bedwhere} GROUP BY 1,2,3""").df()
+_bp_all = con.sql(f"""SELECT dld_area, 'all' segment, {_bedcase} bed, COUNT(*) n,
+                        MEDIAN(actual_worth) med_price, MEDIAN(meter_sale_price)/{SQFT} aed_sqft
+                      FROM transactions_clean WHERE {_bedwhere} GROUP BY 1,3""").df()
+BEDPX = pd.concat([_bp_seg, _bp_all], ignore_index=True)
+BED_WINDOW = f"{con.sql('SELECT MAX(instance_date) FROM transactions_clean').fetchone()[0]:%b %Y}"
+
+def money_short(v):
+    try: v = float(v)
+    except (TypeError, ValueError): return "—"
+    if v != v: return "—"
+    if v >= 1e6: return f"{v/1e6:.1f}M"
+    if v >= 1e3: return f"{v/1e3:.0f}K"
+    return f"{v:.0f}"
+
+def bed_price_chart(sub, seg):
+    """One segment-colored card: bars = median total price by bedroom (trailing 12 mo)."""
+    sub = sub[sub.n >= BED_MIN_N].sort_values("bed")
+    if len(sub):
+        mx = float(sub.med_price.max()) or 1
+        cells = ""
+        for x in sub.itertuples():
+            h = max(3, round(100 * float(x.med_price) / mx))
+            lab = BED_LABEL[int(x.bed)]
+            tip = f"{lab}: median AED {int(x.med_price):,} · {int(round(x.aed_sqft)):,} AED/sqft · {int(x.n)} sales"
+            cells += (f'<div class="bar" title="{esc(tip)}"><div class="v">{money_short(x.med_price)}</div>'
+                      f'<div class="col" style="height:{h}%;background:{SEG_HEX[seg]}"></div>'
+                      f'<div class="yr">{lab}</div></div>')
+        chart = f'<div class="chartcard"><div class="bars">{cells}</div></div>'
+    else:
+        chart = f'<div class="chartcard"><span class="muted">fewer than {BED_MIN_N} sales per bedroom</span></div>'
+    return (f'<div class="segsection box-{seg}"><div class="segsection-h"><span class="tag">{SEG_LABEL[seg]}</span></div>'
+            f'{chart}</div>')
+
+def bedroom_section(bp):
+    """Full area-page section: 3 segment charts (off-plan / combined / secondary) + a detail table."""
+    if not len(bp) or bp.n.max() < BED_MIN_N:
+        return ""
+    charts = "".join(bed_price_chart(bp[bp.segment == s], s) for s in ("offplan", "all", "secondary"))
+    def cell(bed, seg, col):
+        m = bp[(bp.bed == bed) & (bp.segment == seg)]
+        if not len(m): return "—"
+        r = m.iloc[0]
+        if col == "n": return fnum(r["n"])
+        if int(r["n"]) < BED_MIN_N: return "—"      # median unreliable on <BED_MIN_N sales
+        return fnum(r[col]) if pd.notna(r[col]) else "—"
+    trows = ""
+    for b in sorted(int(x) for x in bp.bed.unique()):
+        trows += (f"<tr><td>{BED_LABEL[b]}</td>"
+                  f'<td class="num seg-offplan">{cell(b,"offplan","n")}</td>'
+                  f'<td class="num seg-secondary">{cell(b,"secondary","n")}</td>'
+                  f'<td class="num seg-all">{cell(b,"all","n")}</td>'
+                  f'<td class="num seg-offplan">{cell(b,"offplan","aed_sqft")}</td>'
+                  f'<td class="num seg-secondary">{cell(b,"secondary","aed_sqft")}</td></tr>')
+    table = ('<div class="tablecard" style="margin-top:14px"><table><thead><tr><th>Bedrooms</th>'
+             '<th class="num seg-offplan">Off-plan sales</th><th class="num seg-secondary">Secondary sales</th>'
+             '<th class="num seg-all">All sales</th><th class="num seg-offplan">Off-plan AED/sqft</th>'
+             '<th class="num seg-secondary">Secondary AED/sqft</th></tr></thead>'
+             f"<tbody>{trows}</tbody></table></div>")
+    note = (f'<p class="note" style="margin:-6px 0 14px">Median <b>sale price</b> by bedroom over the trailing 12 months '
+            f'(to {BED_WINDOW}), clean residential basis (Unit/Villa, impossible AED/m² removed). Bars show median total '
+            f'price; the table adds sale counts and median AED/sqft. Off-plan bars carry the developer launch premium, so '
+            f'the secondary (ready) view is the cleaner read on lived-in value. Buckets under {BED_MIN_N} sales in a market '
+            f'are hidden as unreliable.</p>')
+    return (f'<h2>Sale price by bedroom — last 12 months</h2>{note}'
+            f'<div class="seggrid">{charts}</div>{table}')
+
 BENCH = {
  'Emaar Properties':{'n':'28,521','note':'2024 off-plan units (Primo Capital); AED 65.4bn dev sales (Emaar)','url':'https://primocapital.ae/blog/10-top-performing-uae-real-estate-developers-of-2024-key-stats-and-success'},
  'DAMAC Properties':{'n':'16,463','note':'2024 off-plan units (Primo Capital)','url':'https://primocapital.ae/blog/10-top-performing-uae-real-estate-developers-of-2024-key-stats-and-success'},
@@ -242,6 +323,7 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
                 f'{kpi("Value 2023+ (bn AED)", fmoney(r.value_bn_2023plus), vh)}'
                 f'{kpi("Median AED/sqft (2024+)", fnum(r.median_aed_sqft_2024plus))}</div>')
     seg_sections = three_sections(rows, area_kpis, AYR, "dld_area", dld)
+    bed_html = bedroom_section(BEDPX[BEDPX.dld_area == dld])
     yield_block = yield_section(ARY_BY_AREA[dld]) if dld in ARY_BY_AREA else ""
 
     # supply & absorption
@@ -305,6 +387,7 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
 <h2>Three separate views — full numbers &amp; charts</h2>
 <p class="note" style="margin:-6px 0 14px">Off-plan = primary (developer) sales · Secondary = ready/resale · Combined = both. Each section below has its own figures and its own per-year chart. Prices use a clean residential basis (Unit/Villa, impossible AED/m² removed); the secondary view is the cleanest read on real price growth — off-plan launch waves can't distort it.</p>
 {seg_sections}
+{bed_html}
 {yield_block}
 <div style="margin-top:4px">{stats}</div>
 <h2>Supply &amp; absorption</h2>
