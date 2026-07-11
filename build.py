@@ -205,7 +205,9 @@ _bp_all = con.sql(f"""SELECT dld_area, 'all' segment, {_bedcase} bed, COUNT(*) n
                         MEDIAN(actual_worth) med_price, MEDIAN(meter_sale_price)/{SQFT} aed_sqft
                       FROM transactions_clean WHERE {_bedwhere} GROUP BY 1,3""").df()
 BEDPX = pd.concat([_bp_seg, _bp_all], ignore_index=True)
-BED_WINDOW = f"{con.sql('SELECT MAX(instance_date) FROM transactions_clean').fetchone()[0]:%b %Y}"
+MAXDATE = con.sql("SELECT MAX(instance_date) FROM transactions_clean").fetchone()[0]
+BED_WINDOW = f"{MAXDATE:%b %Y}"
+LATEST_FULL_YEAR = MAXDATE.year if MAXDATE.month == 12 else MAXDATE.year - 1  # exclude partial current year from growth
 
 def money_short(v):
     try: v = float(v)
@@ -267,6 +269,66 @@ def bedroom_section(bp):
     return (f'<h2>Sale price by bedroom — last 12 months</h2>{note}'
             f'<div class="seggrid">{charts}</div>{table}')
 
+def yoy_bars(rows):
+    """rows: [(year_str, yoy_pct)] → magnitude bars, green for growth / red for decline."""
+    if not rows:
+        return "<span class='muted'>not enough history</span>"
+    mx = max(abs(v) for _, v in rows) or 1
+    cells = ""
+    for yr, v in rows:
+        h = max(3, round(100 * abs(v) / mx))
+        col = "#16a34a" if v >= 0 else "var(--red)"
+        cells += (f'<div class="bar" title="{esc(yr)}: {v:+.1f}% YoY"><div class="v">{v:+.0f}%</div>'
+                  f'<div class="col" style="height:{h}%;background:{col}"></div><div class="yr">{esc(yr)}</div></div>')
+    return f'<div class="bars">{cells}</div>'
+
+def growth_section(dld):
+    """Year-on-year price growth/decline per area, from area_year_stats median AED/sqft."""
+    sub = AYR[(AYR.dld_area == dld) & (AYR.year <= LATEST_FULL_YEAR)]
+    def series(seg):  # only years with a real sample so medians (and YoY) aren't noise
+        s = sub[sub.segment == seg].sort_values("year")
+        return [(int(r.year), float(r.median_aed_sqft), int(r.tx)) for r in s.itertuples()
+                if pd.notna(r.year) and pd.notna(r.median_aed_sqft) and int(r.tx) >= 10]
+    sec, off = series("secondary"), series("offplan")
+    if len(sec) < 3 or sec[-1][2] < 20:        # need a few years + a solid latest read
+        return ""
+    def yoy(s):
+        return {y1: (v1 - v0) / v0 * 100
+                for (y0, v0, _), (y1, v1, _) in zip(s, s[1:]) if y1 == y0 + 1 and v0}
+    sec_yoy, off_yoy = yoy(sec), yoy(off)
+    if not sec_yoy:
+        return ""
+    ly = max(sec_yoy)                          # latest scored year
+    y0, v0, _ = sec[0]; y1, v1, _ = sec[-1]
+    cagr = ((v1 / v0) ** (1 / (y1 - y0)) - 1) * 100 if (y1 > y0 and v0) else None
+    kpis = (f'<div class="grid k3">'
+            f'{kpi("Secondary price growth", f"{sec_yoy[ly]:+.1f}%", f"{ly} vs {ly-1} · median AED/sqft")}'
+            f'{kpi(f"Secondary CAGR ({y1-y0}y)", (f"{cagr:+.1f}%/yr" if cagr is not None else "—"), f"{y0}→{y1}")}'
+            f'{kpi("Off-plan growth", (f"{off_yoy[ly]:+.1f}%" if ly in off_yoy else "—"), f"{ly} vs {ly-1} · launch-mix noisy")}</div>')
+    chart = (f'<div class="chartcard" style="margin-top:14px"><div class="note" style="margin-bottom:6px">'
+             f'Secondary (ready) median AED/sqft — year-on-year growth (green) / decline (red)</div>'
+             f'{yoy_bars([(str(y), sec_yoy[y]) for y in sorted(sec_yoy)])}</div>')
+    def g(v):
+        if v is None: return "—"
+        return f'<span style="color:{"var(--green-d)" if v >= 0 else "var(--red)"};font-weight:700">{v:+.1f}%</span>'
+    sec_lvl = {y: v for y, v, _ in sec}; off_lvl = {y: v for y, v, _ in off}
+    trows = ""
+    for y in sorted(set(sec_lvl) | set(off_lvl)):
+        trows += (f"<tr><td>{y}</td>"
+                  f'<td class="num seg-offplan">{fnum(off_lvl[y]) if y in off_lvl else "—"}</td>'
+                  f'<td class="num">{g(off_yoy.get(y))}</td>'
+                  f'<td class="num seg-secondary">{fnum(sec_lvl[y]) if y in sec_lvl else "—"}</td>'
+                  f'<td class="num">{g(sec_yoy.get(y))}</td></tr>')
+    table = ('<div class="tablecard" style="margin-top:14px"><table><thead><tr><th>Year</th>'
+             '<th class="num seg-offplan">Off-plan AED/sqft</th><th class="num">Off-plan YoY</th>'
+             '<th class="num seg-secondary">Secondary AED/sqft</th><th class="num">Secondary YoY</th></tr></thead>'
+             f"<tbody>{trows}</tbody></table></div>")
+    note = (f'<p class="note" style="margin:-6px 0 14px">Year-on-year change in the <b>median sale price per sqft</b> '
+            f'(clean residential basis). The headline reads the <b class="seg-secondary">secondary (ready)</b> segment — '
+            f'off-plan swings on launch mix (new towers priced high), so its YoY is context only. The partial current year '
+            f'({MAXDATE.year}, data to {BED_WINDOW}) is excluded; a year needs ≥10 sales in both years to score.</p>')
+    return f'<h2>Price growth &amp; decline — by year</h2>{note}{kpis}{chart}{table}'
+
 BENCH = {
  'Emaar Properties':{'n':'28,521','note':'2024 off-plan units (Primo Capital); AED 65.4bn dev sales (Emaar)','url':'https://primocapital.ae/blog/10-top-performing-uae-real-estate-developers-of-2024-key-stats-and-success'},
  'DAMAC Properties':{'n':'16,463','note':'2024 off-plan units (Primo Capital)','url':'https://primocapital.ae/blog/10-top-performing-uae-real-estate-developers-of-2024-key-stats-and-success'},
@@ -324,6 +386,7 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
                 f'{kpi("Median AED/sqft (2024+)", fnum(r.median_aed_sqft_2024plus))}</div>')
     seg_sections = three_sections(rows, area_kpis, AYR, "dld_area", dld)
     bed_html = bedroom_section(BEDPX[BEDPX.dld_area == dld])
+    growth_html = growth_section(dld)
     yield_block = yield_section(ARY_BY_AREA[dld]) if dld in ARY_BY_AREA else ""
 
     # supply & absorption
@@ -388,6 +451,7 @@ for dld in AST[AST.segment == "all"].dld_area.tolist():
 <p class="note" style="margin:-6px 0 14px">Off-plan = primary (developer) sales · Secondary = ready/resale · Combined = both. Each section below has its own figures and its own per-year chart. Prices use a clean residential basis (Unit/Villa, impossible AED/m² removed); the secondary view is the cleanest read on real price growth — off-plan launch waves can't distort it.</p>
 {seg_sections}
 {bed_html}
+{growth_html}
 {yield_block}
 <div style="margin-top:4px">{stats}</div>
 <h2>Supply &amp; absorption</h2>
