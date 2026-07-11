@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>گزارش دادهٔ DLD — کوتوک</title>
+<style>
+  :root{
+    --paper:#f7faf8; --ink:#18211c; --mut:#5c6b63; --line:#dfe7e2;
+    --green:#15803d; --green-strong:#116233; --green-soft:#e9f4ee;
+    --blue:#2563eb; --teal:#0d9488; --red:#c0392b;
+    --mono-bg:#edf3ef; --card:#ffffff;
+  }
+  /* گزارش رسمی تیم — عمداً تک‌تم روشن (برای اشتراک و PDF) */
+  html{background:var(--paper);color-scheme:light}
+  body{margin:0;background:var(--paper);color:var(--ink)}
+  main{
+    direction:rtl;
+    font-family:"Vazirmatn","SF Arabic","Geeza Pro","Segoe UI",Tahoma,system-ui,sans-serif;
+    max-width:820px;margin:0 auto;padding:40px 24px 56px;
+    font-size:15px;line-height:2;
+  }
+  a{color:var(--green);text-decoration:none;border-bottom:1px solid var(--line)}
+  a:hover,a:focus-visible{border-bottom-color:var(--green)}
+  a:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:2px}
+
+  /* ---------- masthead ---------- */
+  .eyebrow{font-size:12.5px;font-weight:700;color:var(--green);margin:0 0 6px}
+  h1{font-size:27px;font-weight:800;line-height:1.6;margin:0 0 10px;text-wrap:balance}
+  .sub{color:var(--mut);font-size:14px;line-height:1.95;margin:0;max-width:62ch}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .chip{font-size:12px;font-weight:700;padding:3px 12px;border-radius:99px;border:1px solid var(--line);color:var(--mut);background:var(--card)}
+  .chip.pass{background:var(--green-soft);border-color:transparent;color:var(--green-strong)}
+
+  /* ---------- key facts band ---------- */
+  .band{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:26px 0 6px;border-block:1px solid var(--line)}
+  .band>div{padding:14px 6px 12px;text-align:center}
+  .band>div+div{border-inline-start:1px solid var(--line)}
+  .band .n{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--green-strong);line-height:1.5}
+  .band .l{font-size:12px;color:var(--mut);line-height:1.7}
+  @media(max-width:640px){
+    .band{grid-template-columns:1fr 1fr}
+    .band>div:nth-child(3){border-inline-start:none}
+    .band>div:nth-child(n+3){border-top:1px solid var(--line)}
+  }
+
+  /* ---------- sections ---------- */
+  section{margin-top:34px}
+  h2{font-size:17px;font-weight:800;margin:0 0 6px;display:flex;align-items:baseline;gap:10px}
+  h2 .no{color:var(--green);font-variant-numeric:tabular-nums}
+  .lede{color:var(--mut);font-size:13.5px;margin:0 0 14px;max-width:66ch}
+
+  /* tables */
+  .tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
+  th{font-size:12px;font-weight:700;color:var(--mut);text-align:right;padding:9px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:8px 14px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.9}
+  tr:last-child td{border-bottom:none}
+  td.name{font-weight:700;white-space:nowrap}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .note{font-size:12.5px;color:var(--mut);line-height:2;margin:10px 2px 0}
+
+  /* segment legend */
+  .segs{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;font-weight:700;margin-top:12px}
+  .segs span{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+
+  /* findings */
+  ol.findings{margin:0;padding:0;list-style:none;counter-reset:f}
+  ol.findings li{counter-increment:f;position:relative;padding:11px 40px 11px 0;border-bottom:1px solid var(--line);line-height:2}
+  ol.findings li:last-child{border-bottom:none}
+  ol.findings li::before{
+    content:counter(f,persian);position:absolute;right:2px;top:13px;
+    width:24px;height:24px;border-radius:50%;background:var(--green-soft);color:var(--green-strong);
+    font-size:12.5px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  }
+  ol.findings b{font-weight:800}
+  .up{color:var(--green-strong);font-weight:800}
+  .dn{color:var(--red);font-weight:800}
+
+  /* formulas — به زبان ساده، نه نماد برنامه‌نویسی */
+  .f{display:inline-block;font-size:13px;font-weight:600;
+     background:var(--mono-bg);border:1px solid var(--line);border-radius:6px;
+     padding:2px 11px;line-height:2.1}
+
+  /* trust + footer */
+  .trust{border:1px solid var(--line);border-radius:10px;background:var(--green-soft);padding:16px 18px;font-size:13.5px;line-height:2.05}
+  .trust b{font-weight:800}
+  footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut);line-height:2.1}
+
+  .f sup{font-size:10px;vertical-align:super}
+
+  @media print{
+    @page{margin:11mm 12mm}
+    main{max-width:none;padding:0;font-size:11.5px;line-height:1.85}
+    h1{font-size:21px}
+    h2{font-size:14.5px}
+    .sub,.lede{font-size:11.5px}
+    table{font-size:11px;min-width:0}
+    td{padding:5px 10px}
+    th{padding:6px 10px}
+    .f{font-size:11px;line-height:1.9;padding:1px 8px}
+    .band{margin:16px 0 2px}
+    .band .n{font-size:16px}
+    .band>div{padding:8px 4px 7px}
+    section{margin-top:18px}
+    ol.findings li{padding:6px 36px 6px 0;line-height:1.85}
+    ol.findings li::before{top:8px;width:21px;height:21px;font-size:11px}
+    .trust{padding:11px 14px;font-size:11.5px;line-height:1.9}
+    footer{margin-top:14px;padding-top:8px;font-size:10.5px}
+    tr, .band, .trust, ol.findings li{break-inside:avoid}
+    h2{break-after:avoid}
+    a{border-bottom:none;color:var(--ink)}
+  }
+</style>
+</head>
+<body>
+<main lang="fa">
+  <header>
+    <p class="eyebrow">کوتوک · گزارش داخلی تیم</p>
+    <h1>دادهٔ DLD: چه داریم، چه فهمیدیم، با چه فرمولی</h1>
+    <p class="sub">خلاصهٔ دوصفحه‌ایِ پشتِ سایت اعتبارسنجی داده. همهٔ اعداد مستقیم از دیتای باز رسمی «ادارهٔ زمین و املاک دبی (DLD)» محاسبه شده‌اند — نه از پورتال‌های آگهی — و هر سنجه پیش از انتشار از دروازهٔ اعتبارسنجی عبور کرده است.</p>
+    <div class="chips">
+      <span class="chip pass">وضعیت اعتبارسنجی: PASS</span>
+      <span class="chip">معاملات تا ۱۷ فوریهٔ ۲۰۲۶</span>
+      <span class="chip">منبع: دادهٔ باز DLD (دولت دبی)</span>
+    </div>
+  </header>
+
+  <div class="band">
+    <div><div class="n">۱٫۲۷ میلیون</div><div class="l">معاملهٔ فروش ثبتی</div></div>
+    <div><div class="n">۹۰٪</div><div class="l">نگاشت به محله‌های کوتوک</div></div>
+    <div><div class="n">~۶۰٪</div><div class="l">سهم آف‌پلن از فروش (۲۰۲۳+)</div></div>
+    <div><div class="n">۵٫۱٪</div><div class="l">بازده ناخالص اجارهٔ شهر (۲۰۲۵)</div></div>
+  </div>
+
+  <section>
+    <h2><span class="no">۱</span> چه داده‌هایی داریم؟</h2>
+    <p class="lede">هفت دیتاست رسمی، همه یک‌جا تمیز شده و به «محله‌ها و دولوپرهای کوتوک» نگاشت شده‌اند:</p>
+    <div class="tw"><table>
+      <thead><tr><th>دیتاست</th><th>مقیاس</th><th>از آن چه می‌سازیم</th></tr></thead>
+      <tbody>
+        <tr><td class="name">معاملات فروش</td><td class="num">۱٬۲۷۴٬۶۹۶ معامله · تا فوریهٔ ۲۰۲۶</td><td>قیمت هر فوت، رشد/افت سالانه، پرمیوم آف‌پلن، قیمت به تفکیک تعداد خواب</td></tr>
+        <tr><td class="name">قراردادهای اجاره (Ejari)</td><td class="num">~۳۳ میلیون قرارداد · سال مبنا ۲۰۲۵</td><td>اجارهٔ هر فوت و بازده اجاره به تفکیک محله</td></tr>
+        <tr><td class="name">پروژه‌های ثبتی</td><td class="num">۳۵۵٬۰۴۱ واحد در راه</td><td>عرضهٔ آینده و «سال‌های عرضه» هر محله</td></tr>
+        <tr><td class="name">واحدهای سنددار</td><td class="num">۲٬۳۳۹٬۲۱۸ واحد موجود</td><td>موجودی ساخته‌شده و ترکیب خواب هر محله</td></tr>
+        <tr><td class="name">ارزش‌گذاری رسمی DLD</td><td class="num">۲۰۲۴ به بعد</td><td>فاصلهٔ قیمت بازار با ارزش‌گذاری رسمی</td></tr>
+        <tr><td class="name">شارژ ساختمان (OA)</td><td class="num">۲۰۲۳ · ~۵۷ محله</td><td>شارژ سالانهٔ هر فوت به تفکیک محله</td></tr>
+        <tr><td class="name">شاخص رسمی قیمت مسکن</td><td class="num">تا ۲۰۲۳</td><td>روند بلندمدت شهر، برای صحت‌سنجی اعداد خودمان</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note"><b>پاک‌سازی:</b> برای هر سنجهٔ «قیمتی»، زمین، ملک تجاری و قیمت‌های ناممکن کنار گذاشته می‌شوند (~۹٫۷٪ ردیف‌ها)؛ شمارش معاملات دست‌نخورده می‌ماند و معاملات عمدهٔ بالای ۵۰۰ میلیون درهم (~۴٫۵٪ ارزش کل) جدا گزارش می‌شوند.</p>
+    <div class="segs">
+      هر سنجه سه‌بار محاسبه می‌شود:
+      <span><i class="dot" style="background:var(--blue)"></i>آف‌پلن (فروش اولیهٔ دولوپر)</span>
+      <span><i class="dot" style="background:var(--teal)"></i>ثانویه (ملک آماده)</span>
+      <span><i class="dot" style="background:var(--green)"></i>ترکیبی</span>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="no">۲</span> چه برداشت‌هایی شده؟</h2>
+    <ol class="findings">
+      <li><b>بازار اصلی، آف‌پلن است.</b> از ۲۰۲۳ تاکنون حدود <span class="up">۶۰٪</span> فروش دبی آف‌پلن بوده (۳۱۰ هزار از ۵۱۹ هزار معامله) — دقیقاً بازار کوتوک.</li>
+      <li><b>آف‌پلن با پرمیوم معامله می‌شود.</b> میانهٔ شهری (۲۰۲۴+): ‏۱٬۷۷۵ در برابر ۱٬۳۳۲ درهم بر فوت ⇐ حدود <span class="up">+۳۳٪</span> گران‌تر از ملک آماده؛ در دبی مارینا تا <span class="up">+۱۱۵٪</span> (از ۲۰۲۳).</li>
+      <li><b>رشد واقعی قیمت را از بازار ثانویه می‌خوانیم.</b> موج لانچ‌های آف‌پلن میانه را جابه‌جا می‌کند و «رشد» قلابی می‌سازد؛ ثانویه سیگنال تمیز است. نمونهٔ مارینا: <span class="up">+۱۴٫۳٪</span> در ۲۰۲۵ و <span class="up">+۸٪ در سال</span> رشد مرکب شش‌ساله؛ تنها سال منفی، کرونای ۲۰۲۰ (<span class="dn">−۸٪</span>).</li>
+      <li><b>بازده اجارهٔ شهر ~۵٫۱٪ ناخالص است (۲۰۲۵).</b> محله‌های میان‌رده بالاتر (JVC حدود ۷٪) و لوکس‌ها پایین‌تر (نخل ~۴٫۶٪) — همان مبادلهٔ کلاسیکِ بازده در برابر رشد سرمایه.</li>
+      <li><b>ارزش‌گذاری رسمی DLD محافظه‌کارانه است.</b> قیمت بازار در محله‌های نمونه بین <span class="up">+۸٪</span> (مردف) تا <span class="up">+۴۹٪</span> (بیزنس‌بی) بالاتر از ارزش‌گذاری رسمی است (پس از حذف زمین از هر دو طرف).</li>
+      <li><b>عرضهٔ آینده قابل‌سنجش شد.</b> ۳۵۵ هزار واحد در صفِ ساخت در برابر ۲٫۳۴ میلیون واحد موجود (~۱۵٪)؛ برای هر محله «سال‌های عرضه» داریم — مثلاً مارینا ~۳٫۷ سال.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2><span class="no">۳</span> با چه فرمول‌هایی؟</h2>
+    <p class="lede">همه‌جا «میانه» (median) به‌جای میانگین — تا چند معاملهٔ غیرعادی عدد را خراب نکند:</p>
+    <div class="tw"><table>
+      <thead><tr><th>سنجه</th><th>فرمول</th><th>نکتهٔ روش</th></tr></thead>
+      <tbody>
+        <tr><td class="name">مبنای پاک قیمت</td><td><span class="f">فقط فروش مسکونی (آپارتمان و ویلا) با قیمت متری ۵۰۰ تا ۲۰۰ هزار درهم</span></td><td>پایهٔ همهٔ سنجه‌های قیمتی</td></tr>
+        <tr><td class="name">قیمت هر فوت</td><td><span class="f">قیمت هر متر ÷ ۱۰٫۷۶</span></td><td>تبدیل متر به فوت‌مربع</td></tr>
+        <tr><td class="name">پرمیوم آف‌پلن</td><td><span class="f">(میانهٔ آف‌پلن − میانهٔ آماده) ÷ میانهٔ آماده × ۱۰۰</span></td><td>هر دو در یک دوره</td></tr>
+        <tr><td class="name">رشد/افت سالانه</td><td><span class="f">(قیمت امسال − قیمت پارسال) ÷ قیمت پارسال × ۱۰۰</span></td><td>روی بازار آماده؛ سال ناقص حذف؛ حداقل ۱۰ فروش در سال</td></tr>
+        <tr><td class="name">رشد مرکب چندساله</td><td><span class="f">آن رشدِ سالانهٔ ثابتی که قیمت آغاز را به قیمت پایان برساند</span></td><td>میانگین رشد سالانه در کل دوره (CAGR)</td></tr>
+        <tr><td class="name">بازده اجاره</td><td><span class="f">اجارهٔ سالانهٔ هر فوت ÷ قیمت هر فوتِ ملک آماده × ۱۰۰</span></td><td>هم‌سال (۲۰۲۵)؛ ناخالص — شارژ و خالی‌ماندن کسر نشده</td></tr>
+        <tr><td class="name">سال‌های عرضه</td><td><span class="f">واحدهای در راه ÷ میانگین فروش سالانهٔ آف‌پلن (۲۰۲۳–۲۵)</span></td><td>جذبِ بازار با فروش آف‌پلن سنجیده می‌شود، نه کل بازار</td></tr>
+        <tr><td class="name">فاصلهٔ ارزش‌گذاری</td><td><span class="f">(قیمت بازار − ارزش‌گذاری رسمی) ÷ ارزش‌گذاری رسمی × ۱۰۰</span></td><td>هر دو طرف مسکونی؛ زمین حذف</td></tr>
+        <tr><td class="name">قیمت هر خواب</td><td><span class="f">میانهٔ قیمت ۱۲ ماه اخیر، جدا برای هر تعداد خواب</span></td><td>گروهِ کمتر از ۱۵ فروش نمایش داده نمی‌شود</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="trust">
+      <b>چرا به این اعداد اعتماد داریم؟</b>
+      هر سنجه از دو دروازهٔ خودکار می‌گذرد و با مراجع مستقل (Bayut، dxbinteract، Primo Capital، Knight Frank) تطبیق داده می‌شود؛ وضعیت فعلی: <b>PASS با صفر مغایرت بی‌توضیح</b>.
+      محدودیت‌ها هم شفاف‌اند: انتساب دولوپر فقط از دادهٔ رسمی است و ~۴۹٪ معاملات را پوشش می‌دهد؛ شارژ ساختمان فقط برای ۲۰۲۳ موجود است؛ شاخص رسمی قیمت تا ۲۰۲۳ منتشر شده.
+    </div>
+  </section>
+
+  <footer>
+    سایت زنده (هر محله و دولوپر صفحهٔ خودش را دارد): <a href="https://mohsensalare.github.io/kotook_validation_site/" dir="ltr">mohsensalare.github.io/kotook_validation_site</a>
+    · متدولوژی کامل: Kotook_DLD_Report_FA.pdf (۱۲ صفحه)
+    · ساخت دیتابیس: ژوئن ۲۰۲۶ · معاملات تا ۱۷ فوریهٔ ۲۰۲۶
+  </footer>
+</main>
+</body>
+</html>
