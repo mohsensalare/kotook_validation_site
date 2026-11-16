@@ -221,7 +221,7 @@ function render(type, title, d) {
       ${a.pipeline_units ? kpi("Under construction", n0(a.pipeline_units) + " units", a.pipeline_projects ? `in ${n0(a.pipeline_projects)} projects` : "") : ""}
     </div>
     <div class="charts">
-      <div class="card"><h3>Price trend</h3><p class="cap">Median AED/sqft per month (line) and number of sales (bars)</p><div class="cv"><canvas id="cTrend"></canvas></div></div>
+      <div class="card"><h3>Price trend</h3><p class="cap">Median AED/sqft per month (line, months with 5+ sales) and number of sales (bars)</p><div class="cv"><canvas id="cTrend"></canvas></div></div>
       <div class="card"><h3>Off-plan vs ready</h3><p class="cap">Share of sales, last 12 months</p><div class="cv"><canvas id="cPie"></canvas></div></div>
     </div>
     <div class="charts2">
@@ -243,14 +243,21 @@ function render(type, title, d) {
       ${d.recent_rents.map(r => `<tr><td class="mono">${r.date}</td><td>${esc(r.project || r.area || "–")}</td><td>${esc(r.rooms || "–")}</td><td class="num">${n0(r.size_sqft)}</td><td class="num">${aed(r.annual_rent)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
 
   // trend
-  const m = d.months || [];
+  // continuous 24-month axis ending at the newest month; months with no sales are 0, not skipped
+  const raw = Object.fromEntries((d.months || []).map(x => [x.month, x]));
+  const last = (d.months || []).map(x => x.month).sort().pop() || (d.as_of || "").slice(0, 7);
+  const m = [];
+  if (last) { let [yy, mm] = last.split("-").map(Number);
+    for (let i = 0; i < 24; i++) { const k = `${yy}-${String(mm).padStart(2, "0")}`; m.unshift(raw[k] || {month: k, tx: 0});
+      if (--mm === 0) { mm = 12; yy--; } } }
+  const MIN_TX = 5;   // a monthly median from fewer sales is noise
   charts.push(new Chart($("#cTrend"), {
     data: {labels: m.map(x => x.month + (x.partial ? "*" : "")), datasets: [
-      {type: "line", label: "AED/sqft", data: m.map(x => x.median_psf ?? null), borderColor: C.green, backgroundColor: C.green,
-       tension: .3, pointRadius: 2, yAxisID: "y", spanGaps: true},
+      {type: "line", label: "AED/sqft", data: m.map(x => x.tx >= MIN_TX ? x.median_psf ?? null : null), borderColor: C.green, backgroundColor: C.green,
+       cubicInterpolationMode: "monotone", pointRadius: 2, yAxisID: "y", spanGaps: true},
       {type: "bar", label: "Sales", data: m.map(x => x.tx), backgroundColor: m.map(x => x.partial ? "#e2e8f0" : C.greenSoft), yAxisID: "y1"}]},
     options: {maintainAspectRatio: false, interaction: {mode: "index", intersect: false},
-      plugins: {legend: {position: "bottom"}, tooltip: {callbacks: {afterTitle: i => m[i[0].dataIndex]?.partial ? "month not finished" : ""}}},
+      plugins: {legend: {position: "bottom"}, tooltip: {callbacks: {afterTitle: i => { const x = m[i[0].dataIndex] || {}; return x.partial ? "month not finished" : x.tx && x.tx < MIN_TX ? "too few sales for a price" : ""; }}}},
       scales: {y: {position: "left", grid: {color: C.line}}, y1: {position: "right", grid: {display: false}}, x: {grid: {display: false}}}}
   }));
   // pie
