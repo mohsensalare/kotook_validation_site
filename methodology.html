@@ -1,0 +1,114 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How We Build the Numbers · Kotook DLD</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .art{max-width:760px}
+  .art h1{margin-bottom:6px}
+  .art h2{margin-top:34px}
+  .art p,.art li{font-size:15.5px;line-height:1.7;color:var(--ink)}
+  .art ul{padding-left:20px}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0 6px}
+  .steps .card{padding:14px}
+  .steps b{display:block;font-size:13px;color:var(--green-d);margin-bottom:4px}
+  .steps span{font-size:13.5px;color:var(--muted);line-height:1.5}
+  @media(max-width:700px){.steps{grid-template-columns:1fr 1fr}}
+  .tablecard table.terms{width:100%;min-width:0;table-layout:fixed}
+  .terms td{vertical-align:top;font-size:14.5px;line-height:1.55;white-space:normal!important;overflow-wrap:anywhere}
+  .terms td:first-child{font-weight:600;width:150px}
+  @media(max-width:700px){.terms td:first-child{width:100px}}
+  .note{background:var(--green-tint);border-left:3px solid var(--green);padding:12px 16px;border-radius:8px;font-size:14.5px}
+  .back{display:inline-block;margin-bottom:14px;font-weight:600;color:var(--green-d);text-decoration:none}
+</style></head><body>
+<header class="top"><div class="wrap">
+<div class="brand"><span class="dot"></span>Kotook&nbsp;<small>Market Stats (DLD)</small></div>
+</div></header>
+<main><div class="wrap art">
+<a class="back" href="index.html">← Back to live stats</a>
+<h1>How we build these numbers</h1>
+<p class="sub">Where the data comes from, what we count, and how we make sure it is right.</p>
+
+<div class="steps">
+  <div class="card"><b>1 · Collect</b><span>Official DLD sale and rent records</span></div>
+  <div class="card"><b>2 · Clean</b><span>Keep real home sales, drop errors</span></div>
+  <div class="card"><b>3 · Link</b><span>Match each deal to a Kotook area, developer and project</span></div>
+  <div class="card"><b>4 · Calculate</b><span>Medians, trends and checks before publishing</span></div>
+</div>
+
+<h2>1. Where the data comes from</h2>
+<p>Every number on this site comes from the <b>Dubai Land Department (DLD)</b>, the government office that registers every
+property sale in Dubai, and from <b>Ejari</b>, the official rent-contract register. We download their open-data files
+(DLD's open-data page and Dubai Pulse), so we use the same records the government publishes. Each update adds only
+the new rows and then recalculates everything.
+We do not use asking prices from listing portals.</p>
+
+<h2>2. What we count</h2>
+<ul>
+  <li><b>Sales count and total value</b> include every registered sale (homes, land and buildings), the same way DLD
+    reports the market.</li>
+  <li><b>Prices</b> use only residential apartments and villas. Offices, shops, hotel rooms and land are left out, and so are
+    obvious typing errors (a price per square foot far too low or too high to be real).</li>
+  <li><b>Off-plan</b> means bought from the developer before the building is finished. <b>Ready</b> means the building is
+    finished; this includes both resales and the developer's sales at handover.</li>
+  <li><b>Rent</b> uses only <b>new</b> rent contracts for a single home. Renewals are left out because the law caps how much
+    they can rise, so they sit below the real market rent.</li>
+</ul>
+
+<h2>3. Linking deals to Kotook</h2>
+<p>DLD uses its own names for areas and projects, often in Arabic and often different from the names buyers know
+(for example, Dubai Marina is "Marsa Dubai" in DLD). We built a matching table so each deal lands on the right
+<b>Kotook area, developer and project</b>.</p>
+<ul>
+  <li>A project is linked only when the developer and the name clearly agree. We do not guess from similar spellings,
+    and unclear cases are left unlinked rather than linked wrongly.</li>
+  <li>Large DLD zones are split by their master community (Motor City, for example, is not lumped into its wider DLD zone).</li>
+  <li>About <b>300 Kotook projects</b>, <b>87 areas</b> and <b>120 developers</b> have enough sales to show numbers today.</li>
+</ul>
+
+<h2>4. What each number means</h2>
+<div class="tablecard"><table class="terms"><tbody>
+  <tr><td>Price per sqft</td><td>The <b>median</b> price per square foot over the last 12 months: half of the sales were
+    cheaper and half more expensive. A median is not pulled up by a few luxury sales the way an average is.</td></tr>
+  <tr><td>Median price</td><td>The middle sale price of the last 12 months.</td></tr>
+  <tr><td>Yearly change</td><td>How much prices moved compared with the 12 months before, comparing <b>like with like</b>:
+    the same project, the same number of bedrooms and a similar size. This way, a month full of big villas does not
+    look like a price jump.</td></tr>
+  <tr><td>Off-plan share</td><td>The share of sales bought before completion.</td></tr>
+  <tr><td>Rent</td><td>The median yearly rent of new contracts.</td></tr>
+  <tr><td>Under construction</td><td>Units in projects that DLD lists as not finished yet.</td></tr>
+</tbody></table></div>
+
+<h2>5. Rules that keep the numbers honest</h2>
+<ul>
+  <li><b>Minimum sales.</b> We show a price only when it rests on at least 10 sales, and a yearly change only when both
+    years have at least 20 comparable sales. Otherwise you see "–" instead of a misleading number.</li>
+  <li><b>Automatic check before publishing.</b> After each update, the system checks that city-wide numbers stay in a
+    realistic range. If anything looks wrong, the new numbers are not published and the previous ones stay live.</li>
+  <li><b>Monthly charts</b> move up and down because each month sells a different mix of homes. Look at the
+    12-month figures for the real level.</li>
+</ul>
+
+<h2>6. How we checked it</h2>
+<ul>
+  <li><b>Market totals:</b> our 2025 total (214,826 sales, AED 682 billion) is within 1% of DLD's own published total (215,736 sales, AED 687 billion).</li>
+  <li><b>Two sources, same answer:</b> where the DLD website files and Dubai Pulse overlap, they give almost the same
+    numbers (5,856 vs 5,828 sales; 1,437 vs 1,438 AED per sqft).</li>
+  <li><b>Independent report:</b> we compared Business Bay rents for 2025 with a published Property Monitor report:
+    17,891 vs 17,134 contracts and 118.7 vs 119 AED per sqft, with almost the same rent for each bedroom count.</li>
+  <li><b>Matching:</b> we checked a sample of project links by hand; about 1 in 40 was wrong and was fixed.</li>
+</ul>
+
+<h2>7. Limits to keep in mind</h2>
+<ul>
+  <li>Sales are updated to <b>14 November 2026</b>. Rent data currently ends in <b>February 2026</b>, so rental yield
+    is not shown until newer rent files arrive.</li>
+  <li>About 3 in 10 of last year's sales can be linked to a specific Kotook project; the rest still count for their area and
+    the whole market.</li>
+  <li>Ready sales include developer handover sales, because DLD data cannot tell them apart from resales.</li>
+</ul>
+
+<p class="note">In short: official government records, real homes only, strict matching to Kotook, medians instead of averages,
+and no number shown when there is too little data behind it.</p>
+</div></main>
+<footer><div class="wrap">Kotook · source: Dubai Land Department and Ejari open data</div></footer>
+</body></html>
