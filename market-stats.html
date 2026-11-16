@@ -221,7 +221,7 @@ function render(type, title, d) {
       ${a.pipeline_units ? kpi("Under construction", n0(a.pipeline_units) + " units", a.pipeline_projects ? `in ${n0(a.pipeline_projects)} projects` : "") : ""}
     </div>
     <div class="charts">
-      <div class="card"><h3>Price trend</h3><p class="cap">Median AED/sqft per month (line, months with 5+ sales) and number of sales (bars)</p><div class="cv"><canvas id="cTrend"></canvas></div></div>
+      <div class="card"><h3>Price trend</h3><p class="cap">Median price per sqft (AED) each month — shown for months with enough sales</p><div class="cv" style="height:190px"><canvas id="cTrend"></canvas></div><p class="cap" style="margin:14px 0 6px">Number of sales each month</p><div class="cv" style="height:120px"><canvas id="cSales"></canvas></div></div>
       <div class="card"><h3>Off-plan vs ready</h3><p class="cap">Share of sales, last 12 months</p><div class="cv"><canvas id="cPie"></canvas></div></div>
     </div>
     <div class="charts2">
@@ -251,15 +251,21 @@ function render(type, title, d) {
     for (let i = 0; i < 24; i++) { const k = `${yy}-${String(mm).padStart(2, "0")}`; m.unshift(raw[k] || {month: k, tx: 0});
       if (--mm === 0) { mm = 12; yy--; } } }
   const MIN_TX = 5;   // a monthly median from fewer sales is noise
-  charts.push(new Chart($("#cTrend"), {
-    data: {labels: m.map(x => x.month + (x.partial ? "*" : "")), datasets: [
-      {type: "line", label: "AED/sqft", data: m.map(x => x.tx >= MIN_TX ? x.median_psf ?? null : null), borderColor: C.green, backgroundColor: C.green,
-       cubicInterpolationMode: "monotone", pointRadius: 2, yAxisID: "y", spanGaps: true},
-      {type: "bar", label: "Sales", data: m.map(x => x.tx), backgroundColor: m.map(x => x.partial ? "#e2e8f0" : C.greenSoft), yAxisID: "y1"}]},
+  const labels = m.map(x => x.month + (x.partial ? "*" : ""));
+  const note = i => { const x = m[i[0].dataIndex] || {}; return x.partial ? "month not finished" : x.tx && x.tx < MIN_TX ? "too few sales for a price" : ""; };
+  const xAxis = {grid: {display: false}, ticks: {maxRotation: 50, autoSkip: true}};
+  charts.push(new Chart($("#cTrend"), {type: "line",
+    data: {labels, datasets: [{label: "AED/sqft", data: m.map(x => x.tx >= MIN_TX ? x.median_psf ?? null : null),
+      borderColor: C.green, backgroundColor: C.green, cubicInterpolationMode: "monotone", pointRadius: 3, spanGaps: true}]},
     options: {maintainAspectRatio: false, interaction: {mode: "index", intersect: false},
-      plugins: {legend: {position: "bottom"}, tooltip: {callbacks: {afterTitle: i => { const x = m[i[0].dataIndex] || {}; return x.partial ? "month not finished" : x.tx && x.tx < MIN_TX ? "too few sales for a price" : ""; }}}},
-      scales: {y: {position: "left", grid: {color: C.line}}, y1: {position: "right", grid: {display: false}}, x: {grid: {display: false}}}}
-  }));
+      plugins: {legend: {display: false}, tooltip: {callbacks: {afterTitle: note, label: i => `AED ${n0(i.raw)} per sqft · ${m[i.dataIndex].tx} sales`}}},
+      scales: {y: {grid: {color: C.line}, ticks: {callback: v => n0(v)}}, x: {...xAxis, ticks: {display: false}}}}}));
+  charts.push(new Chart($("#cSales"), {type: "bar",
+    data: {labels, datasets: [{label: "Sales", data: m.map(x => x.tx), borderRadius: 3,
+      backgroundColor: m.map(x => x.partial ? "#e2e8f0" : C.greenSoft)}]},
+    options: {maintainAspectRatio: false, interaction: {mode: "index", intersect: false},
+      plugins: {legend: {display: false}, tooltip: {callbacks: {afterTitle: note}}},
+      scales: {y: {grid: {color: C.line}, beginAtZero: true, ticks: {maxTicksLimit: 4}}, x: xAxis}}}));
   // pie
   charts.push(new Chart($("#cPie"), {type: "doughnut",
     data: {labels: ["Off-plan", "Ready"], datasets: [{data: [off.tx || 0, sec.tx || 0], backgroundColor: [C.amber, C.green], borderWidth: 0}]},
