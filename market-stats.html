@@ -41,7 +41,8 @@
   .plist td{vertical-align:middle}.plist tr[data-s]{cursor:pointer}.plist tr[data-s]:hover{background:var(--green-tint)}
   .plist img{width:44px;height:32px;border-radius:6px;object-fit:cover;background:var(--bg2);display:block}
   .plist .pn{font-weight:600}.plist .pd{font-size:12px;color:var(--muted)}
-  .more{display:block;margin:12px auto 0;border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 18px;font-weight:600;cursor:pointer}
+  .pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px;font-size:13px}.more:disabled{opacity:.4;cursor:default}
+  .more{display:block;margin:0;border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 18px;font-weight:600;cursor:pointer}
 </style></head><body>
 <header class="top"><div class="wrap">
 <div class="brand"><span class="dot"></span>Kotook&nbsp;<small>Market Stats (DLD)</small></div>
@@ -160,13 +161,17 @@ function empty(type, title) {
 // Built once from the Kotook project API + DLD stats API; holds only projects that have DLD sales.
 const STATUS = {O: "Off-plan", R: "Ready"};
 const LIST = fetch("data/live_projects.json?v=1").then(r => r.json()).catch(() => null);
+const PER = 20;
 async function loadProjects(type, id) {
   const data = await LIST;
   if (!$("#plBody")) return;
   if (!data) { $("#plBody").innerHTML = '<tr><td colspan="8" class="muted">Could not load projects</td></tr>'; return; }
-  const rows = data.projects.filter(p => type === "area" ? p.area?.id === id : type === "developer" ? p.developer?.id === id : true);
-  $("#plNote").textContent = `${rows.length} projects · list updated ${data.as_of}`;
-  $("#plBody").innerHTML = rows.map(p => `<tr data-s="${esc(p.slug)}">
+  const all = data.projects.filter(p => type === "area" ? p.area?.id === id : type === "developer" ? p.developer?.id === id : true);
+  let rows = all, page = 0;
+  const draw = () => {
+    const pages = Math.max(1, Math.ceil(rows.length / PER)), from = page * PER;
+    $("#plNote").textContent = `${all.length} projects · list updated ${data.as_of}`;
+    $("#plBody").innerHTML = rows.slice(from, from + PER).map(p => `<tr data-s="${esc(p.slug)}">
       <td><img loading="lazy" onerror="this.style.visibility='hidden'" src="${esc(p.thumb || "")}" alt=""></td>
       <td><div class="pn">${esc(p.title)}</div><div class="pd">${esc(type === "area" ? p.developer?.name : p.area?.title || "")}</div></td>
       <td>${STATUS[p.status] ? `<span class="chip ${p.status === "R" ? "ok" : "warn"}">${STATUS[p.status]}</span>` : "–"}</td>
@@ -174,8 +179,21 @@ async function loadProjects(type, id) {
       <td class="num">${p.tx >= 5 && p.median_psf ? n0(p.median_psf) : "–"}</td>
       <td class="num">${p.tx >= 5 ? pct(p.change_pct) : ""}</td>
       <td class="num">${n0(p.tx)}</td></tr>`).join("")
-    || '<tr><td colspan="8" class="muted">No Kotook projects with DLD sales here yet</td></tr>';
-  $("#plBody").querySelectorAll("tr[data-s]").forEach(tr => tr.onclick = () => location.hash = "project/" + tr.dataset.s);
+      || `<tr><td colspan="8" class="muted">${all.length ? "No project matches" : "No Kotook projects with DLD sales here yet"}</td></tr>`;
+    $("#plBody").querySelectorAll("tr[data-s]").forEach(tr => tr.onclick = () => location.hash = "project/" + tr.dataset.s);
+    $("#plPager").hidden = pages < 2;
+    $("#plInfo").textContent = rows.length ? `${from + 1}–${Math.min(from + PER, rows.length)} of ${rows.length}` : "";
+    $("#plPrev").disabled = page === 0; $("#plNext").disabled = page >= pages - 1;
+  };
+  $("#plPrev").onclick = () => { page--; draw(); $("#plFilter").scrollIntoView({block: "nearest"}); };
+  $("#plNext").onclick = () => { page++; draw(); $("#plFilter").scrollIntoView({block: "nearest"}); };
+  $("#plFilter").hidden = all.length <= PER;
+  $("#plFilter").oninput = e => {
+    const q = e.target.value.trim().toLowerCase();
+    rows = q ? all.filter(p => [p.title, p.area?.title, p.developer?.name].some(x => (x || "").toLowerCase().includes(q))) : all;
+    page = 0; draw();
+  };
+  draw();
 }
 
 // ---------- render ----------
@@ -214,8 +232,8 @@ function render(type, title, d) {
     </div>
     ${cmp}
     ${type !== "project" ? `<h2>Kotook projects here</h2><p class="sub" style="margin-top:-6px">Site data (starting price, handover) next to DLD sales of the last 12 months · click a row for its full stats · <span id="plNote"></span></p>
-    <div class="tablecard"><table class="small plist"><thead><tr><th></th><th>Project</th><th>Status</th><th class="num">Starting price</th><th>Handover</th><th class="num">DLD AED/sqft</th><th class="num">Yearly change</th><th class="num">DLD sales</th></tr></thead>
-    <tbody id="plBody"><tr><td colspan="8" class="muted">Loading projects…</td></tr></tbody></table></div>` : ""}
+    <input id="plFilter" class="search" placeholder="Filter these projects by name, area or developer…" autocomplete="off" style="width:100%;margin-bottom:10px" hidden><div class="tablecard"><table class="small plist"><thead><tr><th></th><th>Project</th><th>Status</th><th class="num">Starting price</th><th>Handover</th><th class="num">DLD AED/sqft</th><th class="num">Yearly change</th><th class="num">DLD sales</th></tr></thead>
+    <tbody id="plBody"><tr><td colspan="8" class="muted">Loading projects…</td></tr></tbody></table></div><div class="pager" id="plPager" hidden><button class="more" id="plPrev">← Prev</button><span id="plInfo" class="muted"></span><button class="more" id="plNext">Next →</button></div>` : ""}
     <h2>Latest sales</h2>
     <div class="tablecard"><table class="small"><thead><tr><th>Date</th><th>Project</th><th>Type</th><th>Rooms</th><th class="num">Size (sqft)</th><th class="num">Price</th><th class="num">AED/sqft</th></tr></thead>
     <tbody>${(d.recent_sales || []).map(r => `<tr><td class="mono">${r.date}</td><td>${esc(r.project || r.area || "–")}</td>
