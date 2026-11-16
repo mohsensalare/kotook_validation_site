@@ -1,0 +1,278 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market Stats · Kotook DLD</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .searchbox{position:relative;flex:1;min-width:240px}
+  .searchbox .search{width:100%}
+  .results{position:absolute;left:0;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);
+    border-radius:12px;box-shadow:var(--shadow);z-index:20;max-height:380px;overflow:auto;display:none}
+  .results.open{display:block}
+  .res{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .res:last-child{border-bottom:0}
+  .res:hover,.res.hl{background:var(--green-tint)}
+  .res img,.res .ph{width:34px;height:34px;border-radius:8px;object-fit:cover;background:var(--bg2);flex:none}
+  .res .t{font-weight:600;font-size:14px}
+  .tchip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:auto;text-transform:uppercase;letter-spacing:.04em}
+  .tchip.area{background:#e0f2fe;color:#0369a1}.tchip.project{background:var(--green-soft);color:var(--green-d)}
+  .tchip.developer{background:#ede9fe;color:#6d28d9}.tchip.market{background:var(--amber-soft);color:var(--amber)}
+  .quick{display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 22px}
+  .quick button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;
+    font-weight:600;color:var(--muted);cursor:pointer}
+  .quick button:hover{border-color:var(--green);color:var(--green-d)}
+  .head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .head h1{margin:0}
+  .delta{font-weight:700;font-size:14px}.delta.up{color:var(--green-d)}.delta.down{color:var(--red)}
+  .charts{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:14px}
+  .charts2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:820px){.charts,.charts2{grid-template-columns:1fr}}
+  .card h3{margin:0 0 4px;font-size:15px}.card .cap{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+  .cv{position:relative;height:260px}
+  .state{padding:40px 0;text-align:center;color:var(--muted)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-bottom:10px}
+  .seg button{border:0;background:#fff;padding:5px 12px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--green);color:#fff}
+  .cmp td.num{font-weight:600}
+  .kpi .val{font-size:24px}
+  .charts>*,.charts2>*,.grid>*{min-width:0}
+  @media(max-width:600px){nav.main{overflow-x:auto;white-space:nowrap;max-width:100%}
+    header.top .wrap{flex-wrap:wrap}.grid.k3{grid-template-columns:1fr 1fr}.kpi .val{font-size:20px}}
+  .tablecard table.small{min-width:600px}
+  .plist td{vertical-align:middle}.plist tr[data-s]{cursor:pointer}.plist tr[data-s]:hover{background:var(--green-tint)}
+  .plist img{width:44px;height:32px;border-radius:6px;object-fit:cover;background:var(--bg2);display:block}
+  .plist .pn{font-weight:600}.plist .pd{font-size:12px;color:var(--muted)}
+  .more{display:block;margin:12px auto 0;border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 18px;font-weight:600;cursor:pointer}
+</style></head><body>
+<header class="top"><div class="wrap">
+<div class="brand"><span class="dot"></span>Kotook&nbsp;<small>Market Stats (DLD)</small></div>
+
+</div></header>
+<main><div class="wrap">
+<p class="sub" style="margin-bottom:12px">Live numbers from Dubai Land Department (DLD) transactions, served by the Kotook API. Search any area, project or developer.</p>
+<div class="toolbar"><div class="searchbox">
+  <input id="q" class="search" placeholder="Search area, project or developer… (e.g. Dubai Marina, Azizi, Emaar)" autocomplete="off">
+  <div id="results" class="results"></div></div></div>
+<div class="quick" id="quick"></div>
+<div id="view"><div class="state">Loading…</div></div>
+</div></main>
+<footer><div class="wrap">Kotook · source: Dubai Land Department transactions via Kotook API · prices in AED</div></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const API = "https://backend.kotook.ae/en";
+const DETAIL = {area: "location/citie-area", project: "project/Projects", developer: "developer/developers"};
+const QUICK = [["market","market",0,"Dubai (all)"],["area","dubai-marina",null,"Dubai Marina"],
+  ["area","jvc-jumeirah-village-circle",null,"JVC"],["area","dubai-south",null,"Dubai South"],
+  ["area","business-bay",null,"Business Bay"],["developer","emaar-properties",null,"Emaar"],
+  ["developer","damac-properties",null,"Damac"]];
+const ROOMS = ["r0","r1","r2","r3","r4"];
+const C = {green:"#16a34a", greenSoft:"#bbf7d0", blue:"#0284c7", amber:"#d97706", violet:"#7c3aed", muted:"#94a3b8", line:"#e8edf2"};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const n0 = v => v == null ? "–" : Math.round(v).toLocaleString("en-US");
+const aed = v => {
+  if (v == null) return "–";
+  if (v >= 1e9) return "AED " + (v / 1e9).toFixed(1) + "B";
+  if (v >= 1e6) return "AED " + (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return "AED " + Math.round(v / 1e3) + "K";
+  return "AED " + n0(v);
+};
+const pct = v => v == null ? "" : `<span class="delta ${v >= 0 ? "up" : "down"}">${v >= 0 ? "▲" : "▼"} ${Math.abs(v).toFixed(1)}%</span>`;
+let charts = [];
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.color = "#64748b";
+
+// ---------- search (Kotook OptimizedAdvancedSearch) ----------
+let timer, hits = [], hl = -1;
+$("#q").addEventListener("input", e => {
+  clearTimeout(timer);
+  const q = e.target.value.trim();
+  if (q.length < 2) return closeRes();
+  timer = setTimeout(() => search(q), 250);
+});
+$("#q").addEventListener("keydown", e => {
+  if (!hits.length) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    hl = (hl + (e.key === "ArrowDown" ? 1 : -1) + hits.length) % hits.length; drawRes();
+  } else if (e.key === "Enter") { e.preventDefault(); pick(hits[Math.max(hl, 0)]); }
+  else if (e.key === "Escape") closeRes();
+});
+document.addEventListener("click", e => { if (!e.target.closest(".searchbox")) closeRes(); });
+async function search(q) {
+  try {
+    const r = await fetch(`${API}/project/OptimizedAdvancedSearch/?q=${encodeURIComponent(q)}&limit=12`);
+    const d = await r.json();
+    hits = (d.results || []).filter(x => DETAIL[x.type]); hl = -1; drawRes();
+  } catch { hits = []; drawRes(); }
+}
+function drawRes() {
+  const box = $("#results");
+  box.innerHTML = hits.length ? hits.map((h, i) => `<div class="res ${i === hl ? "hl" : ""}" data-i="${i}">
+      ${h.thumbnail ? `<img src="${esc(h.thumbnail)}" alt="" onerror="this.style.visibility='hidden'">` : `<span class="ph"></span>`}
+      <span class="t">${esc(h.title)}</span><span class="tchip ${h.type}">${h.type}</span></div>`).join("")
+    : `<div class="res"><span class="muted">No match</span></div>`;
+  box.classList.add("open");
+  box.querySelectorAll(".res[data-i]").forEach(el => el.onclick = () => pick(hits[+el.dataset.i]));
+}
+function closeRes() { $("#results").classList.remove("open"); hits = []; }
+function pick(h) { closeRes(); $("#q").value = ""; location.hash = `${h.type}/${h.slug}`; }
+
+$("#quick").innerHTML = QUICK.map(([t, s, , label]) => `<button data-h="${t}/${s}">${label}</button>`).join("");
+$("#quick").querySelectorAll("button").forEach(b => b.onclick = () => location.hash = b.dataset.h);
+
+// ---------- routing: #area/<slug> → Kotook detail API (id) → DLD stats API ----------
+window.addEventListener("hashchange", route);
+route();
+async function route() {
+  const [type, slug] = (location.hash.slice(1) || "market/market").split("/");
+  $("#view").innerHTML = `<div class="state">Loading…</div>`;
+  try {
+    let id = 0, title = "Dubai — whole market", link = null;
+    if (type !== "market") {
+      const r = await fetch(`${API}/${DETAIL[type]}/${encodeURIComponent(slug)}/`);
+      if (!r.ok) throw new Error("not found in Kotook");
+      const d = await r.json();
+      id = d.id; title = d.title || d.full_name || slug;
+      link = `https://kotook.ae/${type === "area" ? "area" : type}/${slug}`;
+    }
+    const s = await fetch(`${API}/dld-stats/api/${type}/${type === "market" ? "" : id + "/"}?recent=15`);
+    if (s.status === 404) return empty(type, title);
+    if (!s.ok) throw new Error("stats " + s.status);
+    render(type, title, await s.json());
+    if (type !== "project") loadProjects(type, id);
+    document.title = `${title} · Market Stats`;
+  } catch (e) {
+    $("#view").innerHTML = `<div class="state">Could not load: ${esc(e.message)}</div>`;
+  }
+}
+function empty(type, title) {
+  $("#view").innerHTML = `<div class="head"><h1>${esc(title)}</h1><span class="tchip ${type}">${type}</span></div>
+    <div class="card state">No DLD transactions matched to this ${type} yet.</div>`;
+}
+
+// ---------- Kotook project list (site API) + DLD stats per project ----------
+const STATUS = {O: "Off-plan", R: "Ready", U: "Under construction"};
+let plToken = 0;
+async function loadProjects(type, id) {
+  const tok = ++plToken, rows = [];
+  const filter = type === "area" ? `area=${id}` : type === "developer" ? `developer=${id}` : "city__slug=dubai";
+  let next = `${API}/project/Projects/?${filter}&size=30`;
+  const draw = () => {
+    rows.sort((a, b) => (b.dld?.tx || 0) - (a.dld?.tx || 0));
+    $("#plBody").innerHTML = rows.map(p => `<tr data-s="${esc(p.slug)}">
+      <td><img loading="lazy" onerror="this.style.visibility='hidden'" src="${esc(p.thumbnails?.small || p.image || "")}" alt=""></td>
+      <td><div class="pn">${esc(p.title)}</div><div class="pd">${esc(type === "area" ? p.developer?.full_name : p.area?.title || "")}</div></td>
+      <td>${STATUS[p.status] ? `<span class="chip ${p.status === "R" ? "ok" : "warn"}">${STATUS[p.status]}</span>` : "–"}</td>
+      <td class="num">${p.min_price ? aed(p.min_price) : "–"}</td><td>${esc((p.handover_date || "").slice(0, 7) || "–")}</td>
+      <td class="num">${p.dld === undefined ? "…" : p.dld?.tx >= 5 ? n0(p.dld.median_psf) : "–"}</td>
+      <td class="num">${p.dld?.tx >= 5 ? pct(p.dld.change_pct) : ""}</td>
+      <td class="num">${p.dld === undefined ? "…" : n0(p.dld?.tx || 0)}</td></tr>`).join("")
+      || '<tr><td colspan="8" class="muted">No Kotook projects here</td></tr>';
+    $("#plBody").querySelectorAll("tr[data-s]").forEach(tr => tr.onclick = () => location.hash = "project/" + tr.dataset.s);
+    $("#plMore").hidden = !next;
+  };
+  const page = async () => {
+    const r = await fetch(next); if (tok !== plToken) return;
+    const d = await r.json(); next = d.next; const batch = d.results || [];
+    rows.push(...batch); draw();
+    for (let i = 0; i < batch.length; i += 6) {           // 6 at a time; responses are cached by nginx
+      await Promise.all(batch.slice(i, i + 6).map(async p => {
+        try { const x = await fetch(`${API}/dld-stats/api/project/${p.id}/?recent=0`);
+              p.dld = x.ok ? (await x.json()).summary.all : null; } catch { p.dld = null; }
+      }));
+      if (tok !== plToken) return; draw();
+    }
+  };
+  $("#plMore").onclick = () => { $("#plMore").hidden = true; page(); };
+  page().catch(() => { $("#plBody").innerHTML = '<tr><td colspan="8" class="muted">Could not load projects</td></tr>'; });
+}
+
+// ---------- render ----------
+function render(type, title, d) {
+  charts.forEach(c => c.destroy()); charts = [];
+  const a = d.summary.all || {}, off = d.summary.offplan || {}, sec = d.summary.secondary || {};
+  const thin = (a.tx || 0) < 5;
+  const kpi = (label, val, hint = "") => `<div class="card kpi"><div class="label">${label}</div><div class="val">${val}</div><div class="hint">${hint}</div></div>`;
+  const rentNote = d.rent_as_of ? `rent data up to ${d.rent_as_of}` : "no rent data";
+  let cmp = "";
+  if (type === "project" && (d.area || d.developer)) {
+    const row = (lbl, x) => x ? `<tr><td class="name">${lbl}</td><td class="num">${n0(x.median_psf)}</td><td class="num">${aed(x.median_price)}</td><td class="num">${pct(x.change_pct)}</td><td class="num">${n0(x.tx)}</td></tr>` : "";
+    cmp = `<h2>Compared with its area and developer</h2><div class="tablecard"><table class="small cmp"><thead><tr><th></th><th class="num">AED / sqft</th><th class="num">Median price</th><th class="num">Yearly change</th><th class="num">Sales (12 mo)</th></tr></thead><tbody>
+      ${row("This project", a)}${row("Its area", d.area)}${row("Its developer", d.developer)}</tbody></table></div>`;
+  }
+  $("#view").innerHTML = `
+    <div class="head"><h1>${esc(title)}</h1><span class="tchip ${type}">${type}</span></div>
+    <p class="sub">Last 12 months of DLD sales up to <b>${d.as_of || "–"}</b>${thin ? " · <b>few sales — numbers are indicative only</b>" : ""}</p>
+    <div class="grid k3">
+      ${kpi("Price per sqft (median)", "AED " + n0(a.median_psf), pct(a.change_pct) + " vs previous 12 months")}
+      ${kpi("Sales (12 months)", n0(a.tx), aed(a.value_aed) + " total value")}
+      ${kpi("Median price", aed(a.median_price), "half the sales were below this")}
+      ${kpi("Off-plan share", a.offplan_share_pct == null ? "–" : a.offplan_share_pct.toFixed(0) + "%", `${off.median_psf ? `off-plan AED ${n0(off.median_psf)}/sqft` : ""}${off.median_psf && sec.median_psf ? " · " : ""}${sec.median_psf ? `ready AED ${n0(sec.median_psf)}/sqft` : ""}`)}
+      ${a.rent_median ? kpi("Rent (median, yearly)", aed(a.rent_median), a.rent_psf ? `AED ${a.rent_psf}/sqft · ${rentNote}` : rentNote) : ""}
+      ${a.pipeline_units ? kpi("Under construction", n0(a.pipeline_units) + " units", a.pipeline_projects ? `in ${n0(a.pipeline_projects)} projects` : "") : ""}
+    </div>
+    <div class="charts">
+      <div class="card"><h3>Price trend</h3><p class="cap">Median AED/sqft per month (line) and number of sales (bars)</p><div class="cv"><canvas id="cTrend"></canvas></div></div>
+      <div class="card"><h3>Off-plan vs ready</h3><p class="cap">Share of sales, last 12 months</p><div class="cv"><canvas id="cPie"></canvas></div></div>
+    </div>
+    <div class="charts2">
+      <div class="card"><h3>By bedrooms</h3><p class="cap">Median sale price and number of sales</p>
+        <div class="seg" id="segRooms"><button class="on" data-m="price">Price</button><button data-m="psf">AED/sqft</button><button data-m="rent">Rent</button></div>
+        <div class="cv"><canvas id="cRooms"></canvas></div></div>
+      <div class="card"><h3>By year</h3><p class="cap">Median AED/sqft — off-plan vs ready</p><div class="cv"><canvas id="cYears"></canvas></div></div>
+    </div>
+    ${cmp}
+    ${type !== "project" ? `<h2>Kotook projects here</h2><p class="sub" style="margin-top:-6px">Site data (starting price, handover) next to DLD sales of the last 12 months · click a row for its full stats</p>
+    <div class="tablecard"><table class="small plist"><thead><tr><th></th><th>Project</th><th>Status</th><th class="num">Starting price</th><th>Handover</th><th class="num">DLD AED/sqft</th><th class="num">Yearly change</th><th class="num">DLD sales</th></tr></thead>
+    <tbody id="plBody"><tr><td colspan="8" class="muted">Loading projects…</td></tr></tbody></table></div><button class="more" id="plMore" hidden>Show more</button>` : ""}
+    <h2>Latest sales</h2>
+    <div class="tablecard"><table class="small"><thead><tr><th>Date</th><th>Project</th><th>Type</th><th>Rooms</th><th class="num">Size (sqft)</th><th class="num">Price</th><th class="num">AED/sqft</th></tr></thead>
+    <tbody>${(d.recent_sales || []).map(r => `<tr><td class="mono">${r.date}</td><td>${esc(r.project || r.area || "–")}</td>
+      <td>${r.offplan ? '<span class="chip warn">off-plan</span>' : '<span class="chip ok">ready</span>'}</td><td>${esc(r.rooms || "–")}</td>
+      <td class="num">${n0(r.size_sqft)}</td><td class="num">${aed(r.price)}</td><td class="num">${n0(r.psf)}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">No recent sales</td></tr>'}</tbody></table></div>
+    ${(d.recent_rents || []).length ? `<h2>Latest rent contracts</h2><div class="tablecard"><table class="small"><thead><tr><th>Date</th><th>Project</th><th>Rooms</th><th class="num">Size (sqft)</th><th class="num">Yearly rent</th></tr></thead><tbody>
+      ${d.recent_rents.map(r => `<tr><td class="mono">${r.date}</td><td>${esc(r.project || r.area || "–")}</td><td>${esc(r.rooms || "–")}</td><td class="num">${n0(r.size_sqft)}</td><td class="num">${aed(r.annual_rent)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+
+  // trend
+  const m = d.months || [];
+  charts.push(new Chart($("#cTrend"), {
+    data: {labels: m.map(x => x.month + (x.partial ? "*" : "")), datasets: [
+      {type: "line", label: "AED/sqft", data: m.map(x => x.median_psf ?? null), borderColor: C.green, backgroundColor: C.green,
+       tension: .3, pointRadius: 2, yAxisID: "y", spanGaps: true},
+      {type: "bar", label: "Sales", data: m.map(x => x.tx), backgroundColor: m.map(x => x.partial ? "#e2e8f0" : C.greenSoft), yAxisID: "y1"}]},
+    options: {maintainAspectRatio: false, interaction: {mode: "index", intersect: false},
+      plugins: {legend: {position: "bottom"}, tooltip: {callbacks: {afterTitle: i => m[i[0].dataIndex]?.partial ? "month not finished" : ""}}},
+      scales: {y: {position: "left", grid: {color: C.line}}, y1: {position: "right", grid: {display: false}}, x: {grid: {display: false}}}}
+  }));
+  // pie
+  charts.push(new Chart($("#cPie"), {type: "doughnut",
+    data: {labels: ["Off-plan", "Ready"], datasets: [{data: [off.tx || 0, sec.tx || 0], backgroundColor: [C.amber, C.green], borderWidth: 0}]},
+    options: {maintainAspectRatio: false, cutout: "62%", plugins: {legend: {position: "bottom"}}}}));
+  // rooms
+  const rr = ROOMS.map(k => d.summary[k]).filter(Boolean);
+  const roomsChart = new Chart($("#cRooms"), {type: "bar", data: {labels: rr.map(x => x.rooms), datasets: []},
+    options: {maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {grid: {color: C.line}}, x: {grid: {display: false}}}}});
+  charts.push(roomsChart);
+  const setRooms = mode => {
+    const f = {price: x => x.median_price, psf: x => x.median_psf, rent: x => x.rent_median}[mode];
+    roomsChart.data.datasets = [{label: mode, data: rr.map(x => (x.tx >= 5 || mode === "rent") ? f(x) ?? null : null),
+      backgroundColor: mode === "rent" ? C.blue : C.green, borderRadius: 6}];
+    roomsChart.update();
+  };
+  document.querySelectorAll("#segRooms button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#segRooms button").forEach(x => x.classList.toggle("on", x === b)); setRooms(b.dataset.m);
+  });
+  setRooms("price");
+  // years: from 2015, only years with enough sales
+  const yr = seg => Object.fromEntries((d.years[seg] || []).filter(x => x.year >= 2015 && x.tx >= 30).map(x => [x.year, x.median_psf]));
+  const yo = yr("offplan"), ys = yr("secondary");
+  const years = [...new Set([...Object.keys(yo), ...Object.keys(ys)])].sort();
+  charts.push(new Chart($("#cYears"), {type: "bar",
+    data: {labels: years, datasets: [
+      {label: "Off-plan", data: years.map(y => yo[y] ?? null), backgroundColor: C.amber, borderRadius: 4},
+      {label: "Ready", data: years.map(y => ys[y] ?? null), backgroundColor: C.green, borderRadius: 4}]},
+    options: {maintainAspectRatio: false, plugins: {legend: {position: "bottom"}}, scales: {y: {grid: {color: C.line}}, x: {grid: {display: false}}}}}));
+}
+</script>
+</body></html>
