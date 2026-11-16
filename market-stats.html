@@ -103,7 +103,15 @@ async function search(q) {
   try {
     const r = await fetch(`${API}/project/OptimizedAdvancedSearch/?q=${encodeURIComponent(q)}&limit=12`);
     const d = await r.json();
-    hits = (d.results || []).filter(x => DETAIL[x.type]); hl = -1; drawRes();
+    let res = (d.results || []).filter(x => DETAIL[x.type]);
+    // projects: keep only those with DLD stats (id is in the thumbnail url; stats responses are cached)
+    const ok = await Promise.all(res.map(async x => {
+      const m = x.type === "project" && /\/project\/(\d+)\//.exec(x.thumbnail || "");
+      if (!m) return x.type !== "project";
+      try { return (await fetch(`${API}/dld-stats/api/project/${m[1]}/?recent=0`)).ok; } catch { return false; }
+    }));
+    if (q !== $("#q").value.trim()) return;
+    hits = res.filter((x, i) => ok[i]); hl = -1; drawRes();
   } catch { hits = []; drawRes(); }
 }
 function drawRes() {
@@ -158,28 +166,31 @@ async function loadProjects(type, id) {
   const tok = ++plToken, rows = [];
   const filter = type === "area" ? `area=${id}` : type === "developer" ? `developer=${id}` : "city__slug=dubai";
   let next = `${API}/project/Projects/?${filter}&size=30`;
+  let checked = 0;
   const draw = () => {
+    const shown = rows.filter(p => p.dld?.tx > 0);
     rows.sort((a, b) => (b.dld?.tx || 0) - (a.dld?.tx || 0));
-    $("#plBody").innerHTML = rows.map(p => `<tr data-s="${esc(p.slug)}">
+    $("#plBody").innerHTML = shown.sort((a, b) => b.dld.tx - a.dld.tx).map(p => `<tr data-s="${esc(p.slug)}">
       <td><img loading="lazy" onerror="this.style.visibility='hidden'" src="${esc(p.thumbnails?.small || p.image || "")}" alt=""></td>
       <td><div class="pn">${esc(p.title)}</div><div class="pd">${esc(type === "area" ? p.developer?.full_name : p.area?.title || "")}</div></td>
       <td>${STATUS[p.status] ? `<span class="chip ${p.status === "R" ? "ok" : "warn"}">${STATUS[p.status]}</span>` : "–"}</td>
       <td class="num">${p.min_price ? aed(p.min_price) : "–"}</td><td>${esc((p.handover_date || "").slice(0, 7) || "–")}</td>
-      <td class="num">${p.dld === undefined ? "…" : p.dld?.tx >= 5 ? n0(p.dld.median_psf) : "–"}</td>
+      <td class="num">${p.dld.tx >= 5 && p.dld.median_psf ? n0(p.dld.median_psf) : "–"}</td>
       <td class="num">${p.dld?.tx >= 5 ? pct(p.dld.change_pct) : ""}</td>
-      <td class="num">${p.dld === undefined ? "…" : n0(p.dld?.tx || 0)}</td></tr>`).join("")
-      || '<tr><td colspan="8" class="muted">No Kotook projects here</td></tr>';
+      <td class="num">${n0(p.dld.tx)}</td></tr>`).join("")
+      + (checked < rows.length ? `<tr><td colspan="8" class="muted">Checking DLD data… ${checked}/${rows.length}</td></tr>`
+         : shown.length ? "" : '<tr><td colspan="8" class="muted">No Kotook projects with DLD sales here yet</td></tr>');
     $("#plBody").querySelectorAll("tr[data-s]").forEach(tr => tr.onclick = () => location.hash = "project/" + tr.dataset.s);
-    $("#plMore").hidden = !next;
+    $("#plMore").hidden = !next || checked < rows.length;
   };
   const page = async () => {
     const r = await fetch(next); if (tok !== plToken) return;
     const d = await r.json(); next = d.next; const batch = d.results || [];
-    rows.push(...batch); draw();
+    rows.push(...batch); $("#plMore").hidden = true; draw();
     for (let i = 0; i < batch.length; i += 6) {           // 6 at a time; responses are cached by nginx
       await Promise.all(batch.slice(i, i + 6).map(async p => {
         try { const x = await fetch(`${API}/dld-stats/api/project/${p.id}/?recent=0`);
-              p.dld = x.ok ? (await x.json()).summary.all : null; } catch { p.dld = null; }
+              p.dld = x.ok ? (await x.json()).summary.all : null; } catch { p.dld = null; } checked++;
       }));
       if (tok !== plToken) return; draw();
     }
