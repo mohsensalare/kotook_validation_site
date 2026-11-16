@@ -104,12 +104,9 @@ async function search(q) {
     const r = await fetch(`${API}/project/OptimizedAdvancedSearch/?q=${encodeURIComponent(q)}&limit=12`);
     const d = await r.json();
     let res = (d.results || []).filter(x => DETAIL[x.type]);
-    // projects: keep only those with DLD stats (id is in the thumbnail url; stats responses are cached)
-    const ok = await Promise.all(res.map(async x => {
-      const m = x.type === "project" && /\/project\/(\d+)\//.exec(x.thumbnail || "");
-      if (!m) return x.type !== "project";
-      try { return (await fetch(`${API}/dld-stats/api/project/${m[1]}/?recent=0`)).ok; } catch { return false; }
-    }));
+    // projects: keep only those in the prebuilt list (= have DLD stats)
+    const list = await LIST, have = new Set((list?.projects || []).map(p => p.slug));
+    const ok = res.map(x => x.type !== "project" || !list || have.has(x.slug));
     if (q !== $("#q").value.trim()) return;
     hits = res.filter((x, i) => ok[i]); hl = -1; drawRes();
   } catch { hits = []; drawRes(); }
@@ -159,43 +156,26 @@ function empty(type, title) {
     <div class="card state">No DLD transactions matched to this ${type} yet.</div>`;
 }
 
-// ---------- Kotook project list (site API) + DLD stats per project ----------
-const STATUS = {O: "Off-plan", R: "Ready", U: "Under construction"};
-let plToken = 0;
+// ---------- Kotook project list: one prebuilt JSON (data/live_projects.json) ----------
+// Built once from the Kotook project API + DLD stats API; holds only projects that have DLD sales.
+const STATUS = {O: "Off-plan", R: "Ready"};
+const LIST = fetch("data/live_projects.json?v=1").then(r => r.json()).catch(() => null);
 async function loadProjects(type, id) {
-  const tok = ++plToken, rows = [];
-  const filter = type === "area" ? `area=${id}` : type === "developer" ? `developer=${id}` : "city__slug=dubai";
-  let next = `${API}/project/Projects/?${filter}&size=100`;
-  let checked = 0;
-  const draw = () => {
-    const shown = rows.filter(p => p.dld?.tx > 0);
-    rows.sort((a, b) => (b.dld?.tx || 0) - (a.dld?.tx || 0));
-    $("#plBody").innerHTML = shown.sort((a, b) => b.dld.tx - a.dld.tx).map(p => `<tr data-s="${esc(p.slug)}">
-      <td><img loading="lazy" onerror="this.style.visibility='hidden'" src="${esc(p.thumbnails?.small || p.image || "")}" alt=""></td>
-      <td><div class="pn">${esc(p.title)}</div><div class="pd">${esc(type === "area" ? p.developer?.full_name : p.area?.title || "")}</div></td>
+  const data = await LIST;
+  if (!$("#plBody")) return;
+  if (!data) { $("#plBody").innerHTML = '<tr><td colspan="8" class="muted">Could not load projects</td></tr>'; return; }
+  const rows = data.projects.filter(p => type === "area" ? p.area?.id === id : type === "developer" ? p.developer?.id === id : true);
+  $("#plNote").textContent = `${rows.length} projects · list updated ${data.as_of}`;
+  $("#plBody").innerHTML = rows.map(p => `<tr data-s="${esc(p.slug)}">
+      <td><img loading="lazy" onerror="this.style.visibility='hidden'" src="${esc(p.thumb || "")}" alt=""></td>
+      <td><div class="pn">${esc(p.title)}</div><div class="pd">${esc(type === "area" ? p.developer?.name : p.area?.title || "")}</div></td>
       <td>${STATUS[p.status] ? `<span class="chip ${p.status === "R" ? "ok" : "warn"}">${STATUS[p.status]}</span>` : "–"}</td>
-      <td class="num">${p.min_price ? aed(p.min_price) : "–"}</td><td>${esc((p.handover_date || "").slice(0, 7) || "–")}</td>
-      <td class="num">${p.dld.tx >= 5 && p.dld.median_psf ? n0(p.dld.median_psf) : "–"}</td>
-      <td class="num">${p.dld?.tx >= 5 ? pct(p.dld.change_pct) : ""}</td>
-      <td class="num">${n0(p.dld.tx)}</td></tr>`).join("")
-      + (checked < rows.length || next ? `<tr><td colspan="8" class="muted">Checking Kotook projects for DLD data… ${checked} checked</td></tr>`
-         : shown.length ? "" : '<tr><td colspan="8" class="muted">No Kotook projects with DLD sales here yet</td></tr>');
-    $("#plBody").querySelectorAll("tr[data-s]").forEach(tr => tr.onclick = () => location.hash = "project/" + tr.dataset.s);
-  };
-  const page = async () => {
-    const r = await fetch(next); if (tok !== plToken) return;
-    const d = await r.json(); next = d.next; const batch = d.results || [];
-    rows.push(...batch); draw();
-    for (let i = 0; i < batch.length; i += 8) {           // 8 at a time; responses are cached by nginx
-      await Promise.all(batch.slice(i, i + 8).map(async p => {
-        try { const x = await fetch(`${API}/dld-stats/api/project/${p.id}/?recent=0`);
-              p.dld = x.ok ? (await x.json()).summary.all : null; } catch { p.dld = null; } checked++;
-      }));
-      if (tok !== plToken) return; draw();
-    }
-    if (next) return page();                               // keep going until every project is checked
-  };
-  page().catch(() => { $("#plBody").innerHTML = '<tr><td colspan="8" class="muted">Could not load projects</td></tr>'; });
+      <td class="num">${p.min_price ? aed(p.min_price) : "–"}</td><td>${esc(p.handover || "–")}</td>
+      <td class="num">${p.tx >= 5 && p.median_psf ? n0(p.median_psf) : "–"}</td>
+      <td class="num">${p.tx >= 5 ? pct(p.change_pct) : ""}</td>
+      <td class="num">${n0(p.tx)}</td></tr>`).join("")
+    || '<tr><td colspan="8" class="muted">No Kotook projects with DLD sales here yet</td></tr>';
+  $("#plBody").querySelectorAll("tr[data-s]").forEach(tr => tr.onclick = () => location.hash = "project/" + tr.dataset.s);
 }
 
 // ---------- render ----------
@@ -233,7 +213,7 @@ function render(type, title, d) {
       <div class="card"><h3>By year</h3><p class="cap">Median AED/sqft — off-plan vs ready</p><div class="cv"><canvas id="cYears"></canvas></div></div>
     </div>
     ${cmp}
-    ${type !== "project" ? `<h2>Kotook projects here</h2><p class="sub" style="margin-top:-6px">Site data (starting price, handover) next to DLD sales of the last 12 months · click a row for its full stats</p>
+    ${type !== "project" ? `<h2>Kotook projects here</h2><p class="sub" style="margin-top:-6px">Site data (starting price, handover) next to DLD sales of the last 12 months · click a row for its full stats · <span id="plNote"></span></p>
     <div class="tablecard"><table class="small plist"><thead><tr><th></th><th>Project</th><th>Status</th><th class="num">Starting price</th><th>Handover</th><th class="num">DLD AED/sqft</th><th class="num">Yearly change</th><th class="num">DLD sales</th></tr></thead>
     <tbody id="plBody"><tr><td colspan="8" class="muted">Loading projects…</td></tr></tbody></table></div>` : ""}
     <h2>Latest sales</h2>
