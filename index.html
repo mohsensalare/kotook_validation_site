@@ -165,7 +165,7 @@ let plToken = 0;
 async function loadProjects(type, id) {
   const tok = ++plToken, rows = [];
   const filter = type === "area" ? `area=${id}` : type === "developer" ? `developer=${id}` : "city__slug=dubai";
-  let next = `${API}/project/Projects/?${filter}&size=30`;
+  let next = `${API}/project/Projects/?${filter}&size=100`;
   let checked = 0;
   const draw = () => {
     const shown = rows.filter(p => p.dld?.tx > 0);
@@ -178,24 +178,23 @@ async function loadProjects(type, id) {
       <td class="num">${p.dld.tx >= 5 && p.dld.median_psf ? n0(p.dld.median_psf) : "–"}</td>
       <td class="num">${p.dld?.tx >= 5 ? pct(p.dld.change_pct) : ""}</td>
       <td class="num">${n0(p.dld.tx)}</td></tr>`).join("")
-      + (checked < rows.length ? `<tr><td colspan="8" class="muted">Checking DLD data… ${checked}/${rows.length}</td></tr>`
+      + (checked < rows.length || next ? `<tr><td colspan="8" class="muted">Checking Kotook projects for DLD data… ${checked} checked</td></tr>`
          : shown.length ? "" : '<tr><td colspan="8" class="muted">No Kotook projects with DLD sales here yet</td></tr>');
     $("#plBody").querySelectorAll("tr[data-s]").forEach(tr => tr.onclick = () => location.hash = "project/" + tr.dataset.s);
-    $("#plMore").hidden = !next || checked < rows.length;
   };
   const page = async () => {
     const r = await fetch(next); if (tok !== plToken) return;
     const d = await r.json(); next = d.next; const batch = d.results || [];
-    rows.push(...batch); $("#plMore").hidden = true; draw();
-    for (let i = 0; i < batch.length; i += 6) {           // 6 at a time; responses are cached by nginx
-      await Promise.all(batch.slice(i, i + 6).map(async p => {
+    rows.push(...batch); draw();
+    for (let i = 0; i < batch.length; i += 8) {           // 8 at a time; responses are cached by nginx
+      await Promise.all(batch.slice(i, i + 8).map(async p => {
         try { const x = await fetch(`${API}/dld-stats/api/project/${p.id}/?recent=0`);
               p.dld = x.ok ? (await x.json()).summary.all : null; } catch { p.dld = null; } checked++;
       }));
       if (tok !== plToken) return; draw();
     }
+    if (next) return page();                               // keep going until every project is checked
   };
-  $("#plMore").onclick = () => { $("#plMore").hidden = true; page(); };
   page().catch(() => { $("#plBody").innerHTML = '<tr><td colspan="8" class="muted">Could not load projects</td></tr>'; });
 }
 
@@ -236,7 +235,7 @@ function render(type, title, d) {
     ${cmp}
     ${type !== "project" ? `<h2>Kotook projects here</h2><p class="sub" style="margin-top:-6px">Site data (starting price, handover) next to DLD sales of the last 12 months · click a row for its full stats</p>
     <div class="tablecard"><table class="small plist"><thead><tr><th></th><th>Project</th><th>Status</th><th class="num">Starting price</th><th>Handover</th><th class="num">DLD AED/sqft</th><th class="num">Yearly change</th><th class="num">DLD sales</th></tr></thead>
-    <tbody id="plBody"><tr><td colspan="8" class="muted">Loading projects…</td></tr></tbody></table></div><button class="more" id="plMore" hidden>Show more</button>` : ""}
+    <tbody id="plBody"><tr><td colspan="8" class="muted">Loading projects…</td></tr></tbody></table></div>` : ""}
     <h2>Latest sales</h2>
     <div class="tablecard"><table class="small"><thead><tr><th>Date</th><th>Project</th><th>Type</th><th>Rooms</th><th class="num">Size (sqft)</th><th class="num">Price</th><th class="num">AED/sqft</th></tr></thead>
     <tbody>${(d.recent_sales || []).map(r => `<tr><td class="mono">${r.date}</td><td>${esc(r.project || r.area || "–")}</td>
